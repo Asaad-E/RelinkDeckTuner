@@ -1,0 +1,3 @@
+dumps/
+*.bin
+__pycache__/
