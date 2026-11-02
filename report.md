@@ -19,6 +19,7 @@ Leyenda de confianza:
 | Entonces, ¿por qué bajan los FPS en los diálogos? | Las escenas de diálogo encienden efectos que el gameplay normal no usa: **luces puntuales con sombra dinámica que se recalcula cada fotograma**, **luces dedicadas a personajes**, **DOF animado plano a plano** y cientos de pistas de luces animadas. Además, la cámara está muy cerca de los personajes, así que se ven con el LOD máximo [VERIFICADO en datos; el coste exacto es HIPÓTESIS]. |
 | ¿Por qué bajan en los pueblos? | Los dos pueblos principales (`pc00` y `pd00`) tienen **5‑20 veces más NPCs colocados** que cualquier zona de combate (298 y 236 frente a ≤57). Además tienen miles de luces de área ambiental y un `foliage` de 2 MB. En sus filtros de zona, los flags que activan "sombra simple" y "niebla a resolución reducida" tienen máscaras distintas a las de otras zonas [VERIFICADO en datos; impacto real en FPS: HIPÓTESIS]. |
 | ¿Hay forma de bajar el coste? | Sí, por dos vías. **(A) Mod de datos** (Reloaded‑II + GBFR Mod Manager, ficheros `.json`): quitar sombras dinámicas de las luces de cinemáticas, limitar volumétricas y forzar sombra simple / niebla reducida en pueblos. **(B) Mod de código** (ASI estilo GBFRelinkFix): bajar el LOD, la resolución de sombras y el DOF, y opcionalmente escalar la resolución de render. Los patrones de bytes de LOD, sombras y TAA están **comprobados en v2.0.5** [VERIFICADO]. |
+| ¿Tiene el juego opciones ocultas? | Sí. `option_item.tbl` contiene Shadow Quality, Effects, Character Models, Background Models, Decal y DOF, pero están desactivadas en PC (§5.3). "Limit Number of Point Lights" / "Limit Shadow Cache" **no existen**: son textos huérfanos (corregido respecto a la primera versión). |
 | ¿Qué puedo probar ya, sin programar nada? | GBFRelinkFix (Codeberg, ago‑2026) con `Level of Detail Multiplier < 1` y `Shadow Quality Resolution` baja. Sus 8 patrones encuentran una sola coincidencia en tu ejecutable (§5.1). |
 
 ---
@@ -34,6 +35,7 @@ Leyenda de confianza:
 | `callers.py` | Busca `call`/`jmp rel32` hacia una función. |
 | `evtb_filters.py`, `evtb_bools.py` | Analizan los `master.evtb` de cinemáticas (FlatBuffers, esquema de GBFRDataTools). |
 | `scene_stats.py`, `layout_aggregate.py` | Cuentan objetos de escena (luces, NPCs…) en `layout/**/*.scene.msg` (MessagePack). |
+| `option_table.py` | Decodifica `option_item.tbl` y enlaza los textos mediante el hash XXHash32 propio del juego. |
 | `ccomp_dump.py` | Aplana los 173 `filter/**/*.ccomp.msg` (parámetros de postprocesado y luz por zona). |
 
 Las salidas intermedias están en `src/dumps/` (ignorado por git, se regenera con las herramientas).
@@ -185,9 +187,27 @@ Cambios de datos candidatos, por orden de seguridad:
 
 [Todos los cambios D* son HIPÓTESIS de impacto: el formato está verificado, el efecto en FPS no.]
 
-### 5.3 Opciones del juego que conviene revisar primero [VERIFICADO: existen los textos]
+### 5.3 Opciones del menú: visibles, ocultas y huérfanas [VERIFICADO]
 
-`text_ui.msg` incluye: Graphics Quality (Standard/Medium/High/Ultra High/Custom), Lighting, Shadow Quality, Textures, Rendering ("calidad de efectos y modelos"), Background Models, Character Models, Effects, Blur, **"Limit Number of Point Lights"**, **"Limit Shadow Cache"** y "Battle Effects Intensity". Las dos opciones de "Limit…" atacan justo el coste de §3.3a. [Comprueba que están activadas en tu Deck.]
+> **Corrección:** la primera versión de este reporte decía que "Limit Number of Point Lights" y "Limit Shadow Cache" eran opciones del juego. **Es falso.** Esos textos (`TXT_PAU_OPT_TOG_LIMIT_PLIGHT` / `_SCASH`) existen en `text_ui.msg`, pero ni su nombre ni su hash aparecen en las tablas de opciones, en el ejecutable ni en ninguno de los 28.681 archivos de `ui/` y `system/`. Son textos huérfanos.
+
+El menú se define en `system/table/option_item.tbl` (235 filas de 52 bytes). Los textos se enlazan por el hash XXHash32 propio del juego, que verifiqué con dos vectores conocidos. Herramienta: `tools/option_table.py`. Cada fila tiene 16 bytes de flags. Los bytes 5 y 9 están a 1 en todas las opciones que se ven en PC y a 0 en las ocultas [la semántica exacta de cada byte es HIPÓTESIS; el patrón es consistente]:
+
+| Visibles en PC | Ocultas en PC (filas presentes, flags a 0) |
+|---|---|
+| Display Device, Graphics Quality, Screen Mode, Lighting, Resolution, Frame Rate, VSync, Textures, Rendering, Blur, Colorblind, Battle Effects Intensity, Player Silhouette | **Shadow Quality** (fila 60), **Effects** (69), **Character Models** (71), **Background Models** (72), **Decal** (73, valores Fast/Standard/High), **Depth/DOF** (63, On/Off), IBL (68), Reflection (75), HDR (54), DirectX (52), Benchmark (59), Graphics Mode Calidad/Rendimiento (57/58, de consola) |
+
+La fila "Custom" de la tabla de presets (§3.2) se rellena con 19 campos de la configuración (función `0x6bb950`), así que el motor de PC sigue leyendo valores por categoría. [HIPÓTESIS: volver a mostrar las filas ocultas (editando sus flags en `option_item.tbl`) podría hacer que funcionen de verdad en PC. Si no, para cada una habría que conectar el valor a un hook (§5.4).]
+
+### 5.4 Cómo dar opciones configurables al mod
+
+| Vía | Qué permite | Coste |
+|---|---|---|
+| **Variantes del mod de datos** (p. ej. "Diálogos sin sombras", "Pueblos ligeros") como mods separados en Reloaded‑II | Activar o desactivar cada grupo con una casilla en Reloaded‑II. No cambia en caliente. | Bajo |
+| **ASI con `.ini`** (como GBFRelinkFix) | Valores numéricos (multiplicador de LOD, resolución de sombras, escala de render, DOF on/off, "modo diálogo"). Se lee al arrancar. | Medio |
+| **Mod C# de Reloaded‑II con configuración** | Pantalla de configuración en Reloaded‑II, sin tocar archivos. | Medio |
+| **Reactivar opciones ocultas del menú del juego** (editando `option_item.tbl`) | Opciones dentro del propio menú del juego: Sombras, Efectos, Modelos, DOF. | Bajo si el motor las respeta. Hay que probarlo. |
+| **Añadir opciones nuevas al menú del juego** | Opciones propias (p. ej. "Calidad en diálogos") dentro del menú. | Alto: filas nuevas en `option_item.tbl` / `option_switch_button.tbl`, textos nuevos en `text_ui.msg` y un hook que lea el valor guardado. Las tablas cambian de formato entre versiones. |
 
 ---
 
