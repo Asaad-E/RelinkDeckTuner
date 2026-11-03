@@ -367,13 +367,15 @@ Con `discard` + UAV, la GPU no puede descartar píxeles ocultos antes del shader
 
 Modelos candidatos por número de índices (por buscar a qué zona pertenecen; los layouts de `pd00` no los nombran como texto): 9366 → `bg012c`, `bg2084`, `bg6735`, `bga238`.
 
-### 7.10 Vegetación más ligera por umbrales de LOD [PENDIENTE de medir]
+### 7.10 Vegetación más ligera por umbrales de LOD [MEDIDO: resuelve el diálogo]
 
 El draw caro (9.366 índices) coincide con un trozo del LOD0 de **`bg012c`**, un árbol mediano con materiales `mediumtree_*` y `leaf_01`. Sus LODs tienen 14.580 / 10.230 / 5.430 / 2.952 índices. En `.minfo` (esquema `MInfo_ModelInfo.fbs` de GBFRDataTools), el campo `lod_screen_size_thresholds` decide qué LOD se usa según el tamaño en pantalla, y se lee al cargar la zona. `tools/minfo.py` lo lee.
 
 `tools/build_foliage.py` detecta como vegetación los modelos `bg`/`ba` cuyo `.mmat` nombra texturas de hojas, arbustos, hierba, etc. A esos modelos les sube a 1000 los umbrales de los LOD 0..N, para que no puedan elegirse de cerca. Solo cambian 4 bytes por umbral, y se comprueba. Se excluyen los modelos sin un LOD final alcanzable.
 
 Primera prueba (`--level 2`): 243 modelos de vegetación usan como mucho el LOD2 (≈37 % de los índices en `bg012c`). Es para medir la ganancia máxima; si funciona, se ajusta a LOD1. Instalado en la Deck junto a `dialogue` + `towns`, con la escala de resolución apagada.
+
+**Resultado (Deck, "Verbose Man", resolución nativa 1280x720, sin escala):** **30 FPS**, 33,3 ms (28,9‑37,0), GPU **85 % / 1283 MHz / 7,3 W**, CPU 3,2 GHz. Antes: 27 FPS, 36,5‑37 ms, GPU 99 % / 10,4 W. **Es la primera vez que este diálogo llega a 30 sin bajar la resolución.** La GPU incluso queda con margen y cede energía a la CPU. El usuario lo da por bueno ("perfecto"). Queda como paquete principal de la Deck: `dialogue` + `towns` + `foliage_lod2` + GBFRelinkFix (sombras 256, LOD 0.75) + `RelinkDeckTuner` en `Mode = 0`.
 
 ---
 
