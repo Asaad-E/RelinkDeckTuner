@@ -429,6 +429,38 @@ Con `Scale = 0.85` (1088x612): **30 FPS**, 33,7 ms (33,3‑34,1), GPU 99 % / 144
 - Coste en la GPU del PC (Radeon integrada), 1088x612 → 1280x720: nearest 0,07 ms, bicúbico 0,45 ms, **FSR1 0,85 ms**. El TUP original costaba 2,16 ms en la captura (contador de RenderDoc).
 - En el juego (PC): el log muestra `temporal upsampler shader replaced by FSR1 EASU: hr=0x00000000`, y los diálogos de Lyria se ven sin bandas con 0.85.
 
+### 7.13 Matriz de rendimiento automatizada en PC (2026‑11‑03) [MEDIDO]
+
+**Método** (`tools/pcbench/`):
+- `drive.py` restaura las partidas de referencia y arranca el juego. Reconoce cada pantalla comparando capturas con miniaturas de referencia (y los bordes del texto "Main Menu" del HUD), carga el slot y dispara el diálogo:
+  - slot 1: Lyria, *"No wonder you're a master swordswoman!"*, Folca;
+  - slot 3: el Verbose Man, Seedhollow.
+- Lee `dialogueFps` del log de RelinkDeckTuner (la cámara de cinemática se actualiza una vez por fotograma) durante 15 s y toma la mediana.
+- Las teclas solo se envían si el juego tiene el foco.
+- `matrix.sh` instala cada combinación de datos y `.ini`, mide los dos diálogos y deja el juego de fábrica al final.
+- Ajustes: los de la Deck (Standard, 1280x720), con el límite de FPS subido a 120 **solo en el PC**, para medir margen y no el tope de 30.
+- GPU: Radeon integrada del PC, más lenta que la de la Deck. Las cifras sirven para comparar configuraciones entre sí.
+- Ruido: la línea base repetida dio 18/25 y 19/25 FPS (±1 FPS).
+
+| Configuración | Lyria (slot 1) | Verbose Man (slot 3) | Ganancia media (tiempo de fotograma) |
+|---|---|---|---|
+| A. Nativo (fábrica) | 18‑19 | 25 | — |
+| B. 3D 0.85, TUP del juego | 22 | 31 | −19 % |
+| C. 3D 0.85, **FSR1** | 23 | 32 | −22 % |
+| D. 3D 0.85, bicúbico | 23 | 32 | −22 % |
+| E. 3D 0.75, FSR1 | 27 | 38 | −33 % |
+| F. 3D 0.9, FSR1 | 21 | 29 | −13 % |
+| G. Mods de datos `dialogue` + `towns` | 19 | 25 | ~0 % |
+| H. Vegetación LOD1 | 21 | 31 | −15 % |
+| **I. Vegetación LOD1 + 3D 0.85 FSR1** | **25** | **39** | **−31 %** |
+| J. Vegetación LOD2 | 22 | 36 | −22 % |
+
+**Conclusiones:**
+- **FSR1 no cuesta rendimiento** respecto al TUP del juego (incluso +1 FPS) y quita las bandas. El bicúbico rinde igual pero es más blando.
+- Los mods de datos `dialogue` + `towns` no mueven estos dos diálogos (no tienen luces puntuales con sombra ni son zonas `pc00`/`pd00` afectadas por filtros).
+- La vegetación ayuda mucho más en Seedhollow (Verbose Man, −20 %) que en Folca (Lyria, −10 %). Coincide con el perfilado: la vegetación es el 49 % del fotograma del Verbose Man y el 27 % del de Lyria.
+- Las dos palancas se suman: **LOD1 + 3D 0.85 FSR1** da −31 % de tiempo de fotograma. En la Deck esa combinación midió 30 FPS en Lyria (§7.11), lo que cuadra con 22‑23 FPS nativos × 1,33.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
