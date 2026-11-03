@@ -304,6 +304,7 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
   - Como sobra mucha GPU, se sube a `Scale = 0.85` (1088x612) para el siguiente diálogo.
   - Con `Fields = 2` (solo el segundo par a 0.85), el diálogo "Verbose Man" siguió a **26 FPS, GPU 99 %**: el segundo par por sí solo no reduce el render. Se vuelve a `Fields = 3`. [El log de esa sesión se sobrescribió al reiniciar; desde la v0.2 el log se acumula.]
   - `Fields = 3`, `Scale = 0.85` (1088x612), "Verbose Man": **30 FPS**, 33,4 ms pero inestable (24,8‑41,9), GPU 86 % / 1469 MHz / 9,6 W. Al límite. Se prueba 0.8 (1024x576).
+  - `Scale = 0.8` (1024x576), "Verbose Man": **30 FPS**, 33,4 ms (28,9‑36,7, más estable), GPU 85 % / 1334 MHz / 7,4 W, CPU 3,0 GHz. **Valor recomendado** para diálogos.
   - **Problema: parpadeo negro** al cambiar de resolución, también cambiando solo el segundo par (`Fields = 2`). Causa: las globales de tamaño se usan para **crear** los render targets (p. ej. `0x1da6ce` copia el tamaño en un descriptor de textura, `0x26dac6` reserva buffers de `ancho×alto×3`). Cambiar el tamaño obliga a recrearlos y se pierde al menos un fotograma (y el historial de TAA). No es un fallo del mod: es inherente a cambiar el tamaño en caliente. Para evitarlo hay dos vías:
     - cambiar solo cuando la pantalla ya está en negro (pantallas de carga entre zonas);
     - un escalado por viewport dentro del motor, que es mucho más complejo.
