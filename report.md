@@ -256,6 +256,18 @@ Overlay de MangoHud nivel 4, juego de fábrica (v2.0.5). Las fotos están en `no
 - En diálogos exteriores de día, las 1.412 luces puntuales con sombra (§3.3a) probablemente no están presentes. Por tanto, el mod `dialogue` solo ayudará en interiores y escenas nocturnas. Para estas escenas, las palancas con más efecto son: **LOD/densidad de fondo** (`Background Models`, multiplicador de LOD de GBFRelinkFix), **resolución de sombras** y **DOF**. Si no basta, la vía segura es bajar la escala de render solo durante los diálogos (fase 2, `0x6bbaa0`).
 - Queda abierta la 7.2 (nitidez); el patrón de GPU no la necesita para decidir.
 
+### 7.5 Con mods (Deck, 2026‑11‑02) [MEDIDO, sin A/B en la misma escena]
+
+Configuración: mods `dialogue` + `towns` (data.i parcheado con `tools/patch_index.py`) y GBFRelinkFix 1.1.5 (LOD 0.6, sombras 512). Render a 1280x720.
+
+| Escena | FPS | GPU | CPU | Nota |
+|---|---|---|---|---|
+| Diálogos en Zinkenstill (3 capturas) | 27‑29 | 94‑99 % | 1,4 GHz | Siguen limitados por GPU; antes, en el bosque, 22‑26 (escena distinta). |
+| Gameplay en Zinkenstill | 30 (29‑38 ms) | 88 % | 3,4 GHz | Igual que sin mods: límite de CPU. |
+| Pueblo 2 (Folca, misión "Family Zathba"), partida avanzada | **30 estables** | 81 % / 4,1 W | 41 % / 6,3 W | El usuario indica que antes no mantenía 30 aquí. Overlay de nivel 1 (sin frametime). |
+
+Falta la comparación limpia: el mismo punto del pueblo 2 sin mods y con mods.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
