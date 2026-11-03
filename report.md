@@ -402,6 +402,8 @@ En el diálogo del Verbose Man, la vegetación era el **49 %** del fotograma. Aq
 
 Con `foliage_lod1`, **los árboles sí se mueven con el viento** (confirmado por el usuario). LOD1 conserva la animación; LOD2 no.
 
+Tras reiniciar la Deck, la misma prueba (`foliage_lod1` + 3D a 0.9) da **27 FPS**, 36,8 ms (36,0‑37,3), GPU 94 % / 1426 MHz / 9,7 W. Los 21 FPS anteriores eran un estado anómalo tras la suspensión. Faltan ~3,5 ms; se prueba `Scale = 0.85` en caliente.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
