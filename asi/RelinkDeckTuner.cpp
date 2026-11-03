@@ -164,6 +164,9 @@ DWORD WINAPI Worker(LPVOID) {
         if (applied && (index != appliedIndex || memcmp(row + 9, wrote, sizeof(wrote)) != 0)) {
             // The game rewrote the row (options changed / preset switched): take its values as new originals.
             Log("row changed by the game: %d %d %d %d -> new originals", row[9], row[10], row[11], row[12]);
+            int32_t* old = Row(appliedIndex);
+            if (index != appliedIndex && memcmp(old + 9, wrote, sizeof(wrote)) == 0)
+                memcpy(old + 9, orig, sizeof(orig));  // leave the preset we left untouched
             applied = false;
         }
         if (want && !applied) {
@@ -202,7 +205,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.2 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.3 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
