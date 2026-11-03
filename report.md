@@ -264,6 +264,7 @@ Configuración: mods `dialogue` + `towns` (data.i parcheado con `tools/patch_ind
 |---|---|---|---|---|
 | Diálogos en Zinkenstill (3 capturas) | 27‑29 | 94‑99 % | 1,4 GHz | Siguen limitados por GPU; antes, en el bosque, 22‑26 (escena distinta). |
 | Gameplay en Zinkenstill | 30 (29‑38 ms) | 88 % | 3,4 GHz | Igual que sin mods: límite de CPU. |
+| Diálogo en pueblo 2 ("Verbose Man"), matorrales detrás | 27 (36,4‑37,3 ms) | 94 % / 1427 MHz / 9,7 W | 38 % / 1,4 GHz / 1,7 W | Único diálogo que baja en esta sesión; limitado por GPU. |
 | Pueblo 2 (Folca, misión "Family Zathba"), partida avanzada | **30 estables** | 81 % / 4,1 W | 41 % / 6,3 W | El usuario indica que antes no mantenía 30 aquí. Overlay de nivel 1 (sin frametime). |
 
 Falta la comparación limpia: el mismo punto del pueblo 2 sin mods y con mods.
