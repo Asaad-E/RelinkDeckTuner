@@ -404,6 +404,8 @@ Con `foliage_lod1`, **los árboles sí se mueven con el viento** (confirmado por
 
 Tras reiniciar la Deck, la misma prueba (`foliage_lod1` + 3D a 0.9) da **27 FPS**, 36,8 ms (36,0‑37,3), GPU 94 % / 1426 MHz / 9,7 W. Los 21 FPS anteriores eran un estado anómalo tras la suspensión. Faltan ~3,5 ms; se prueba `Scale = 0.85` en caliente.
 
+Con `Scale = 0.85` (1088x612): **30 FPS**, 33,7 ms (33,3‑34,1), GPU 99 % / 1441 MHz / 10,4 W. Llega a 30, pero justo. El usuario lo ve "en el límite de aceptable": **el reescalado del juego produce bandas horizontales**. Parece un muestreo de punto o sin filtrar al estirar 612 → 720 líneas (factor 1,18, no entero). Mejorar ese filtro (lineal o FSR1) atacaría la causa del mal aspecto; hay que localizar el pase de reescalado en una captura con la escala activa.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
