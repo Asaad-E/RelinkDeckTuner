@@ -20,7 +20,7 @@ Leyenda de confianza:
 | ¿Qué funciona? | (1) **Vegetación LOD1** por datos (`build_foliage.py`): −15 % de tiempo de fotograma en diálogos y mejora también caminando. (2) **Bajar solo el 3D en diálogos** (`RelinkDeckTuner.asi`, `Fields = 1`): la UI sigue nítida y casi no parpadea. (3) **FSR1** en lugar del reescalador temporal del juego, que dejaba bandas: mismo coste y sin bandas (§7.12). |
 | Resultado | PC: Lyria 18 → 25 FPS y Verbose Man 25 → 38 con el paquete final (§7.13‑7.15). Deck: Lyria a 30 FPS con LOD1 + 0.85. |
 | ¿Qué no funcionó? | Opciones ocultas del menú (el PC no tiene código para ellas), apagar efectos de post‑proceso (~1 ms y se ve mal), LOD lejano y sombras (no afectan a lo cercano) y `DialogueLodBias` (poca ganancia; la vegetación instanciada no pasa por ese bucle). |
-| Pendiente | Probar en la Deck el paquete final con FSR1 (validado en PC con GBFRelinkFix y RelinkDeckTuner 0.8 juntos). Medir pueblos con tirones (LOD 0.75 frente a 0.6, densidad de NPCs). |
+| Pendiente | Nada crítico. En la Deck: FSR1 funciona bajo Proton (log), diálogo a 30 FPS y Seedhollow a 30 estables sin tirones (§7.16). Opcional: RCAS (nitidez de FSR) si 0.8 se ve blando. |
 
 Guía de uso: [GUIA.md](GUIA.md).
 
@@ -516,6 +516,19 @@ La vegetación ligera también ayuda fuera de los diálogos, sobre todo en Seedh
 | GBFRelinkFix | sombras 256 (= Standard), LOD 0.75 | Sombras como el preset; el LOD 0.75 es elección del usuario (con 0.6 había menos tirones en pueblos). |
 
 Si una escena concreta sigue por debajo de 30, el siguiente paso es `Scale = 0.8`. En PC aporta +10 % de FPS en el Verbose Man y +4 % en Lyria, a cambio de algo más de blandura (sin bandas, gracias a FSR1).
+
+### 7.16 Pueblos: tirones y densidad de NPCs (Deck, 2026‑11‑03) [MEDIDO]
+
+**RelinkDeckTuner 0.9** mide cada fotograma. Un trampolín en la entrada de la función por fotograma (`0x6bbaa0`) lee `RDTSC`. Cada `LogPeriodMs` escribe el fotograma más largo (`maxFrameMs`) y cuántos superan 40 ms (`slow40`), con el TSC calibrado contra `QueryPerformanceCounter`. En PC, el menú a 60 FPS mide exactamente 16,7 ms por fotograma.
+
+Paseo de ~1,5 min por Seedhollow (slot 3), mismo recorrido, paquete final (vegetación LOD1, etc.):
+
+| | FPS (mediana) | Fotograma más largo cada 2 s: mediana / p90 | Tirones > 40 ms (fuera de cargas) |
+|---|---|---|---|
+| NPCs 100 % (`density_` 5.10) | 29,9 | 33,5 / 34,2 ms | 152 ms, 42 ms, 41 ms |
+| NPCs 80 % (`density_` 4.08) | 29,9 | 33,5 / 34,3 ms | 41 ms |
+
+El salto de ~370‑390 ms al principio de cada sesión es la carga. Con el paquete final, **Seedhollow va a 30 FPS estables y casi sin tirones**. Bajar la densidad de NPCs al 80 % no cambia nada medible, y el usuario lo ve "casi igual". Al principio del proyecto el frametime en pueblo oscilaba entre 28 y 38 ms: la mejora viene de la vegetación ligera, no de los NPCs. Se mantiene la densidad original.
 
 ---
 
