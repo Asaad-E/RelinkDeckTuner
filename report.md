@@ -343,6 +343,10 @@ Primera variante `fx_all`: todos los grupos apagados, sobre `dialogue` + `towns`
 
 **Error detectado en nuestra configuración:** el usuario juega con Lighting Quality = Standard, cuya resolución de sombras por defecto es **256** (según el `.ini` de GBFRelinkFix: Ultra 2048, High 1024, Standard 256). Al poner `Resolution = 512` en GBFRelinkFix estábamos **duplicando** la resolución de sombras respecto a su preset. Siguiente prueba: sombras 128 y LOD 0.4, para medir el peso de la geometría y las sombras.
 
+**Resultado sombras 128 + LOD 0.4** ("Verbose Man", sin escala de resolución): **27 FPS**, 36,5 ms (36,1‑37,9), GPU 99 %. Igual que con sombras 512 / LOD 0.75. **Ni la resolución de sombras ni el LOD influyen** en este diálogo. Se dejan sombras 256 (el valor de Standard) y LOD 0.75.
+
+**Conclusión de 7.6‑7.8:** en los diálogos pesados, el coste es por píxel de la geometría cercana: hojas con transparencia superpuestas, sombreado de personajes y luz diferida. El post‑proceso (~1 ms), las sombras y el LOD apenas cuentan. Lo único que ha movido la cifra es reducir píxeles (escala de resolución), y aun así hay escenas (Lyria) que se quedan en 26 FPS a 0.85.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
