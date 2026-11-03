@@ -37,6 +37,13 @@ constexpr int kRowSize = 0x4c;
 // (1.0) is the normal factor; lowering it makes scenery pick lighter LODs. Only read there.
 constexpr uintptr_t kLodFactorTable = 0x54abf98;
 const float kLodFactorDefault[2] = {0.25f, 1.0f};
+// Hook on that multiply (lea rax,[table]; vmulss xmm3,[rax+r10*4]). There rsi points at the model's
+// LOD record, whose first floats are its lod_screen_size_thresholds. The vegetation data mod raises
+// threshold 0..1 of vegetation models to 1000 (factory models are all below 100), so
+// "threshold[1] >= 100" tells vegetation apart and its screen size gets an extra factor.
+constexpr uintptr_t kVegLodHook = 0x23a4ba5;
+const uint8_t kVegLodHookBytes[] = {0x48, 0x8d, 0x05, 0xec, 0x73, 0x10, 0x03,   // lea rax, [rip+...]
+                                    0xc4, 0xa1, 0x62, 0x59, 0x1c, 0x90};        // vmulss xmm3,xmm3,[rax+r10*4]
 
 const uint8_t kSizeCopyBytes[] = {0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x56, 0x57, 0x55, 0x53,
                                   0x48, 0x83, 0xec, 0x38, 0x8b, 0x05, 0x8a, 0x8e, 0x97, 0x06};
@@ -49,6 +56,7 @@ struct Config {
     int exitDelayMs = 700;  // dialogue considered over after this long without camera hits
     int logPeriodMs = 2000; // periodic snapshot; 0 = only on changes
     double lodBias = 1.0;   // scenery LOD factor during dialogues (1.0 = unchanged)
+    double vegLodBias = 1.0; // extra factor for marked vegetation during dialogues (0 = lowest LOD)
     double baseScale = 1.0; // 3D scale outside dialogues in Mode 1 (1.0 = native)
     int keyBase = 0x78;     // virtual key that cycles BaseScale (F9); 0 = disabled
     int keyDialogue = 0x79; // virtual key that cycles Scale (F10); 0 = disabled
@@ -260,6 +268,59 @@ FrameStats* InstallFrameStatsHook(uintptr_t site, const uint8_t* orig, size_t le
     return fs;
 }
 
+// Vegetation LOD hook: data block at tramp+0x100. factor multiplies the screen size of vegetation
+// models (1.0 = unchanged, 0 = always their last LOD); hits counts vegetation LOD decisions (plain
+// increment from several threads, only for the log).
+struct VegLod { volatile float factor; volatile LONG64 hits; };
+VegLod* g_veg;
+
+VegLod* InstallVegLodHook() {
+    uintptr_t site = g_base + kVegLodHook;
+    size_t len = sizeof(kVegLodHookBytes);
+    auto* tramp = static_cast<uint8_t*>(AllocNear(site, 0x1000));
+    if (!tramp) return nullptr;
+    intptr_t dist = reinterpret_cast<intptr_t>(tramp) - static_cast<intptr_t>(site + 5);
+    if (dist < INT32_MIN + 0x1000 || dist > INT32_MAX - 0x1000) return nullptr;
+    auto* veg = reinterpret_cast<VegLod*>(tramp + 0x100);
+    veg->factor = 1.0f;
+    uint8_t* p = tramp;
+    auto bytes = [&](std::initializer_list<uint8_t> b) { for (uint8_t x : b) *p++ = x; };
+    auto rip = [&](const volatile void* target) {
+        int32_t d = static_cast<int32_t>(reinterpret_cast<const volatile uint8_t*>(target) - (p + 4));
+        memcpy(p, &d, 4); p += 4;
+    };
+    uintptr_t table = g_base + kLodFactorTable;
+    bytes({0x48, 0xb8}); memcpy(p, &table, 8); p += 8;     // mov rax, table   (was lea rax, [rip+...])
+    bytes({0xc4, 0xa1, 0x62, 0x59, 0x1c, 0x90});           // vmulss xmm3, xmm3, [rax+r10*4]
+    bytes({0x81, 0x7e, 0x04, 0x00, 0x00, 0xc8, 0x42});     // cmp dword [rsi+4], 100.0f (positive floats order as ints)
+    uint8_t* jlDone = p; bytes({0x7c, 0x00});               // jl done
+    bytes({0xc5, 0xe2, 0x59, 0x1d}); rip(&veg->factor);    // vmulss xmm3, xmm3, [factor]
+    bytes({0x48, 0xff, 0x05}); rip(&veg->hits);            // inc qword [hits]
+    jlDone[1] = static_cast<uint8_t>(p - (jlDone + 2));
+    bytes({0xff, 0x25, 0, 0, 0, 0});                       // jmp [rip+0]   (flags are dead here)
+    uintptr_t resume = site + len;
+    memcpy(p, &resume, 8);
+    FlushInstructionCache(GetCurrentProcess(), tramp, 0x1000);
+
+    uint8_t patch[sizeof(kVegLodHookBytes)];
+    memset(patch, 0x90, sizeof(patch));
+    patch[0] = 0xe9;
+    int32_t rel = static_cast<int32_t>(dist);
+    memcpy(patch + 1, &rel, 4);
+    DWORD old;
+    VirtualProtect(reinterpret_cast<void*>(site), len, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(reinterpret_cast<void*>(site), patch, len);
+    VirtualProtect(reinterpret_cast<void*>(site), len, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), len);
+    return veg;
+}
+
+void SetVegFactor(float v) {
+    if (!g_veg || g_veg->factor == v) return;
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(&g_veg->factor), *reinterpret_cast<LONG*>(&v));
+    Log("vegetation LOD factor -> %.2f", v);
+}
+
 // TSC ticks per millisecond, measured against QueryPerformanceCounter over ~200 ms.
 double CalibrateTscPerMs() {
     LARGE_INTEGER f, q0, q1;
@@ -294,6 +355,10 @@ void ReadConfig(Config& c) {
     c.lodBias = atof(buf);
     if (!(c.lodBias >= 0.1)) c.lodBias = 0.1;
     if (c.lodBias > 1.0) c.lodBias = 1.0;
+    GetPrivateProfileStringA("RelinkDeckTuner", "DialogueVegetationLod", "1.0", buf, sizeof(buf), g_iniPath);
+    c.vegLodBias = atof(buf);
+    if (!(c.vegLodBias >= 0.0)) c.vegLodBias = 0.0;
+    if (c.vegLodBias > 1.0) c.vegLodBias = 1.0;
 }
 
 float* g_lodFactor;  // &table[1], made writable at init; null if the table did not match
@@ -374,8 +439,9 @@ DWORD WINAPI Worker(LPVOID) {
                 CompareFileTime(&fa.ftLastWriteTime, &lastIni) != 0) {
                 lastIni = fa.ftLastWriteTime;
                 ReadConfig(cfg);
-                Log("config: Mode=%d Scale=%.2f BaseScale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f",
-                    cfg.mode, cfg.scale, cfg.baseScale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias);
+                Log("config: Mode=%d Scale=%.2f BaseScale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f DialogueVegetationLod=%.2f",
+                    cfg.mode, cfg.scale, cfg.baseScale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias,
+                    cfg.vegLodBias);
             }
         }
 
@@ -393,6 +459,7 @@ DWORD WINAPI Worker(LPVOID) {
         lastHits = hits;
         bool nowDialogue = lastHitTime && now - lastHitTime < static_cast<ULONGLONG>(cfg.exitDelayMs);
         SetLodFactor(nowDialogue && cfg.mode != 0 ? static_cast<float>(cfg.lodBias) : 1.0f);
+        SetVegFactor(nowDialogue && cfg.mode != 0 ? static_cast<float>(cfg.vegLodBias) : 1.0f);
         if (nowDialogue != inDialogue) {
             inDialogue = nowDialogue;
             Log("dialogue camera %s (hits total %lld)", inDialogue ? "ON" : "OFF", hits);
@@ -448,9 +515,9 @@ DWORD WINAPI Worker(LPVOID) {
             }
             lastLog = now;
             auto* g = reinterpret_cast<int32_t*>(g_base + kRenderSize);
-            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f maxFrameMs=%.1f slow40=%lld dialogueFps=%.1f dialogue=%d applied=%d",
+            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f maxFrameMs=%.1f slow40=%lld dialogueFps=%.1f dialogue=%d applied=%d vegLods=%lld",
                 index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], fps, maxMs, slow, dlgFps,
-                inDialogue, applied);
+                inDialogue, applied, g_veg ? g_veg->hits : 0LL);
         }
     }
 }
@@ -464,7 +531,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.11 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.12 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
@@ -488,6 +555,9 @@ void Init(HMODULE self) {
         if (VirtualProtect(t, sizeof(kLodFactorDefault), PAGE_READWRITE, &old)) g_lodFactor = t + 1;
     }
     Log(g_lodFactor ? "scenery LOD factor table found" : "scenery LOD factor table not found: DialogueLodBias off");
+    if (g_lodFactor && BytesMatch(kVegLodHook, kVegLodHookBytes, sizeof(kVegLodHookBytes))) g_veg = InstallVegLodHook();
+    Log(g_veg ? "vegetation LOD hook installed at +%zx" : "vegetation LOD hook not installed (+%zx): DialogueVegetationLod off",
+        kVegLodHook);
     Log(g_frames ? "frame counter installed at +%zx" : "frame counter not installed (+%zx)", kSizeCopy);
     g_upscaler = GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath);
     if (g_upscaler == 1 || g_upscaler == 2) {
