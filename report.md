@@ -264,10 +264,22 @@ Configuración: mods `dialogue` + `towns` (data.i parcheado con `tools/patch_ind
 |---|---|---|---|---|
 | Diálogos en Zinkenstill (3 capturas) | 27‑29 | 94‑99 % | 1,4 GHz | Siguen limitados por GPU; antes, en el bosque, 22‑26 (escena distinta). |
 | Gameplay en Zinkenstill | 30 (29‑38 ms) | 88 % | 3,4 GHz | Igual que sin mods: límite de CPU. |
-| Diálogo en pueblo 2 ("Verbose Man"), matorrales detrás | 27 (36,4‑37,3 ms) | 94 % / 1427 MHz / 9,7 W | 38 % / 1,4 GHz / 1,7 W | Único diálogo que baja en esta sesión; limitado por GPU. |
-| Pueblo 2 (Folca, misión "Family Zathba"), partida avanzada | **30 estables** | 81 % / 4,1 W | 41 % / 6,3 W | El usuario indica que antes no mantenía 30 aquí. Overlay de nivel 1 (sin frametime). |
+| Diálogo en Seedhollow ("Verbose Man"), matorrales detrás | 27 (36,4‑37,3 ms) | 94 % / 1427 MHz / 9,7 W | 38 % / 1,4 GHz / 1,7 W | Único diálogo que baja en esta sesión; limitado por GPU. |
+| Pueblo 2 (Seedhollow, misión "Family Zathba"), partida avanzada | **30 estables** | 81 % / 4,1 W | 41 % / 6,3 W | El usuario indica que antes no mantenía 30 aquí. Overlay de nivel 1 (sin frametime). |
 
-Falta la comparación limpia: el mismo punto del pueblo 2 sin mods y con mods.
+**Sin mods (juego de fábrica, misma partida, 21:32‑21:35):**
+
+| Escena | FPS | Frametime | GPU | CPU |
+|---|---|---|---|---|
+| Seedhollow ("Gather intel on Seedhollow's army"), plaza del mercado | 30 | 29,2‑36,6 ms | 84‑91 % / 1115‑1204 MHz / 5,1‑5,9 W | 43‑46 % / 3,3 GHz / 5,8‑6,1 W |
+| Diálogo "Zathba's Henchman", fondo de arbustos | 30 | 23‑42 ms | 88 % / 956 MHz / 4,4 W | 38 % / 3,5 GHz |
+
+**Lectura:**
+- El pueblo 2 era **Seedhollow**, no Folca.
+- Sin mods también mantiene 30 en esta partida, con algo más de GPU (84‑91 % frente a 81 %). Los mods no son lo que lo sostiene; la mejora que se recordaba no se reproduce en estas condiciones.
+- La VRAM es de 3,3 GiB con y sin mods. La bajada de 4,5 a 3,3 GiB de §7.5 se debía a la escena o sesión, no al mod (corregido).
+- El diálogo de fábrica medido no es el mismo que el de 27 FPS con mods (la partida avanzó), así que no sirve de A/B. Para eso se ha dejado una partida fija en el **slot 3** (copia en `~/Documents/gbfr_benchmark_save/` en la Deck), justo antes de esos diálogos.
+
 
 ---
 
