@@ -197,7 +197,13 @@ El menú se define en `system/table/option_item.tbl` (235 filas de 52 bytes). Lo
 |---|---|
 | Display Device, Graphics Quality, Screen Mode, Lighting, Resolution, Frame Rate, VSync, Textures, Rendering, Blur, Colorblind, Battle Effects Intensity, Player Silhouette | **Shadow Quality** (fila 60), **Effects** (69), **Character Models** (71), **Background Models** (72), **Decal** (73, valores Fast/Standard/High), **Depth/DOF** (63, On/Off), IBL (68), Reflection (75), HDR (54), DirectX (52), Benchmark (59), Graphics Mode Calidad/Rendimiento (57/58, de consola) |
 
-La fila "Custom" de la tabla de presets (§3.2) se rellena con 19 campos de la configuración (función `0x6bb950`), así que el motor de PC sigue leyendo valores por categoría. [HIPÓTESIS: volver a mostrar las filas ocultas (editando sus flags en `option_item.tbl`) podría hacer que funcionen de verdad en PC. Si no, para cada una habría que conectar el valor a un hook (§5.4).]
+La fila "Custom" de la tabla de presets (§3.2) se rellena con 19 campos de la configuración (función `0x6bb950`), así que el motor de PC sigue leyendo valores por categoría.
+
+**Resultado de reactivarlas (prueba en Deck, 2026‑11‑02) [VERIFICADO]:** con el mod `options`, las 6 opciones aparecen en el menú y se pueden cambiar, pero **vuelven a su valor al salir del menú** y `GraphicSetting.vdat` no se modifica. El ejecutable lo explica:
+- Las claves de las opciones visibles aparecen en 4‑8 sitios del código (`0x2089xx`, `0x2091xx`‑`0x209bxx`, `0x20cdxx`‑`0x20d3xx` y la tabla `0x315c1xx`). Son, previsiblemente, carga, aplicación y guardado.
+- Las de Shadow (`0x2f6f51d1`), Character (`0xfbce1e5b`), Background (`0x4c1d6fce`), Effect (`0x4c37cdf9`), Decal (`0xffd48260`) y DOF (`0xf1d8b677`) aparecen **una sola vez**, en el bloque `0x20e3xx`‑`0x20e46x`, que es el registro de todas las claves.
+
+La versión de PC no tiene código que guarde ni aplique esos valores. Desde datos no se pueden hacer funcionar. Haría falta un hook que lea el valor y además encontrar qué parámetro del render controla cada una (en consola lo hace código que en PC no está). Para Sombras y LOD ya existen equivalentes en GBFRelinkFix.
 
 ### 5.4 Cómo dar opciones configurables al mod
 
@@ -206,7 +212,7 @@ La fila "Custom" de la tabla de presets (§3.2) se rellena con 19 campos de la c
 | **Variantes del mod de datos** (p. ej. "Diálogos sin sombras", "Pueblos ligeros") como mods separados en Reloaded‑II | Activar o desactivar cada grupo con una casilla en Reloaded‑II. No cambia en caliente. | Bajo |
 | **ASI con `.ini`** (como GBFRelinkFix) | Valores numéricos (multiplicador de LOD, resolución de sombras, escala de render, DOF on/off, "modo diálogo"). Se lee al arrancar. | Medio |
 | **Mod C# de Reloaded‑II con configuración** | Pantalla de configuración en Reloaded‑II, sin tocar archivos. | Medio |
-| **Reactivar opciones ocultas del menú del juego** (editando `option_item.tbl`) | Opciones dentro del propio menú del juego: Sombras, Efectos, Modelos, DOF. | Bajo si el motor las respeta. Hay que probarlo. |
+| ~~Reactivar opciones ocultas del menú del juego~~ | Se ven, pero no se guardan ni se aplican en PC (§5.3). | **Descartada** |
 | **Añadir opciones nuevas al menú del juego** | Opciones propias (p. ej. "Calidad en diálogos") dentro del menú. | Alto: filas nuevas en `option_item.tbl` / `option_switch_button.tbl`, textos nuevos en `text_ui.msg` y un hook que lea el valor guardado. Las tablas cambian de formato entre versiones. |
 
 ---
