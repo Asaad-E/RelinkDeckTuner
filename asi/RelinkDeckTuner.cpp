@@ -7,6 +7,8 @@
 // Resolution: 0x6bbaa0 copies graphics preset row[index] +0x24..+0x30 into the render-size
 // globals every frame, so we scale those fields while in dialogue and restore them after.
 //
+// Upscaler: the engine's temporal upsampler is replaced by FSR1 EASU or bicubic (see below).
+//
 // The .ini next to the .asi is re-read every second (can be edited while the game runs);
 // the .log next to it records what happens.
 #define _CRT_SECURE_NO_WARNINGS
@@ -16,6 +18,8 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+
+#include "upscale_shaders.h"
 
 namespace {
 
@@ -55,6 +59,79 @@ void Log(const char* fmt, ...) {
     va_end(ap);
     fputc('\n', g_log);
     fflush(g_log);
+}
+
+// ---------- upscaler replacement ----------
+// When the render size is lowered, the engine upsamples the 3D image with its temporal upsampler
+// (pixel shader below, "TUP"). That shader expects alternating-column reconstruction and leaves
+// horizontal bands at arbitrary scales, so when the game creates it we hand it FSR1 EASU or a
+// bicubic shader instead (same bindings). Matched by the DXBC checksum, nothing else is touched.
+const uint8_t kTupShaderHash[16] = {0x0e, 0x46, 0x25, 0xda, 0x89, 0x89, 0x54, 0x02,
+                                    0x38, 0x98, 0x44, 0xe5, 0x78, 0x56, 0x12, 0x32};
+
+using CreateDeviceFn = HRESULT(WINAPI*)(void*, int, HMODULE, UINT, const void*, UINT, UINT, void**, void*, void**);
+using CreatePixelShaderFn = HRESULT(STDMETHODCALLTYPE*)(void*, const void*, SIZE_T, void*, void**);
+constexpr int kCreatePixelShaderSlot = 15;  // ID3D11Device vtable index
+
+CreateDeviceFn g_realCreateDevice;
+CreatePixelShaderFn g_realCreatePixelShader;
+int g_upscaler;  // 1 = FSR1 EASU, 2 = bicubic
+
+HRESULT STDMETHODCALLTYPE HookedCreatePixelShader(void* device, const void* code, SIZE_T len, void* linkage,
+                                                  void** out) {
+    if (code && len > 20 && memcmp(static_cast<const uint8_t*>(code) + 4, kTupShaderHash, 16) == 0) {
+        const void* repl = g_upscaler == 2 ? kBicubicPS : kEasuPS;
+        SIZE_T replLen = g_upscaler == 2 ? sizeof(kBicubicPS) : sizeof(kEasuPS);
+        HRESULT hr = g_realCreatePixelShader(device, repl, replLen, linkage, out);
+        Log("temporal upsampler shader replaced by %s: hr=0x%08lx", g_upscaler == 2 ? "bicubic" : "FSR1 EASU",
+            static_cast<unsigned long>(hr));
+        if (SUCCEEDED(hr)) return hr;
+        Log("replacement rejected, keeping the original shader");
+    }
+    return g_realCreatePixelShader(device, code, len, linkage, out);
+}
+
+void HookDeviceVtable(void* device) {
+    void** vtbl = *static_cast<void***>(device);
+    if (vtbl[kCreatePixelShaderSlot] == reinterpret_cast<void*>(&HookedCreatePixelShader)) return;
+    DWORD old;
+    if (!VirtualProtect(&vtbl[kCreatePixelShaderSlot], sizeof(void*), PAGE_READWRITE, &old)) return;
+    g_realCreatePixelShader = reinterpret_cast<CreatePixelShaderFn>(vtbl[kCreatePixelShaderSlot]);
+    vtbl[kCreatePixelShaderSlot] = reinterpret_cast<void*>(&HookedCreatePixelShader);
+    VirtualProtect(&vtbl[kCreatePixelShaderSlot], sizeof(void*), old, &old);
+    Log("ID3D11Device::CreatePixelShader hooked");
+}
+
+HRESULT WINAPI HookedCreateDevice(void* adapter, int driverType, HMODULE sw, UINT flags, const void* levels,
+                                  UINT numLevels, UINT sdk, void** device, void* level, void** context) {
+    HRESULT hr = g_realCreateDevice(adapter, driverType, sw, flags, levels, numLevels, sdk, device, level, context);
+    if (SUCCEEDED(hr) && device && *device) HookDeviceVtable(*device);
+    return hr;
+}
+
+// Replace one entry of the game's import table (no code patching).
+bool HookImport(const char* dll, const char* func, void* hook, void** original) {
+    auto* base = reinterpret_cast<uint8_t*>(GetModuleHandleA(nullptr));
+    auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+    auto* nt = reinterpret_cast<IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    for (auto* imp = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); imp->Name; imp++) {
+        if (_stricmp(reinterpret_cast<char*>(base + imp->Name), dll) != 0) continue;
+        auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(base + imp->OriginalFirstThunk);
+        auto* slots = reinterpret_cast<IMAGE_THUNK_DATA*>(base + imp->FirstThunk);
+        for (; names->u1.AddressOfData; names++, slots++) {
+            if (IMAGE_SNAP_BY_ORDINAL(names->u1.Ordinal)) continue;
+            auto* byName = reinterpret_cast<IMAGE_IMPORT_BY_NAME*>(base + names->u1.AddressOfData);
+            if (strcmp(byName->Name, func) != 0) continue;
+            DWORD old;
+            VirtualProtect(&slots->u1.Function, sizeof(void*), PAGE_READWRITE, &old);
+            *original = reinterpret_cast<void*>(slots->u1.Function);
+            slots->u1.Function = reinterpret_cast<ULONG_PTR>(hook);
+            VirtualProtect(&slots->u1.Function, sizeof(void*), old, &old);
+            return true;
+        }
+    }
+    return false;
 }
 
 bool BytesMatch(uintptr_t rva, const uint8_t* expected, size_t n) {
@@ -124,7 +201,7 @@ DWORD WINAPI Worker(LPVOID) {
     Config cfg;
     ReadConfig(cfg);
     FILETIME lastIni{};
-    LONG64 lastHits = 0;
+    LONG64 lastHits = 0, logHits = 0;
     ULONGLONG lastHitTime = 0, lastLog = 0, lastIniCheck = 0;
     bool inDialogue = false, applied = false;
     uint32_t appliedIndex = 0;
@@ -148,7 +225,6 @@ DWORD WINAPI Worker(LPVOID) {
 
         LONG64 hits = g_camHits ? *g_camHits : 0;
         if (hits != lastHits) lastHitTime = now;
-        LONG64 hitDelta = hits - lastHits;
         lastHits = hits;
         bool nowDialogue = lastHitTime && now - lastHitTime < static_cast<ULONGLONG>(cfg.exitDelayMs);
         if (nowDialogue != inDialogue) {
@@ -188,10 +264,13 @@ DWORD WINAPI Worker(LPVOID) {
         }
 
         if (cfg.logPeriodMs > 0 && now - lastLog >= static_cast<ULONGLONG>(cfg.logPeriodMs)) {
+            // The dialogue camera updates once per rendered frame, so hits per second = dialogue FPS.
+            double dlgFps = lastLog ? (hits - logHits) * 1000.0 / static_cast<double>(now - lastLog) : 0.0;
+            logHits = hits;
             lastLog = now;
             auto* g = reinterpret_cast<int32_t*>(g_base + kRenderSize);
-            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d camHits/tick=%lld dialogue=%d applied=%d",
-                index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], hitDelta, inDialogue, applied);
+            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d dialogueFps=%.1f dialogue=%d applied=%d",
+                index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], dlgFps, inDialogue, applied);
         }
     }
 }
@@ -205,7 +284,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.3 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.5 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
@@ -220,6 +299,14 @@ void Init(HMODULE self) {
         return;
     }
     Log("camera hook installed at +%zx", kCamHook);
+    g_upscaler = GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath);
+    if (g_upscaler == 1 || g_upscaler == 2) {
+        if (HookImport("d3d11.dll", "D3D11CreateDevice", reinterpret_cast<void*>(&HookedCreateDevice),
+                       reinterpret_cast<void**>(&g_realCreateDevice)))
+            Log("D3D11CreateDevice hooked (upscaler replacement on)");
+        else
+            Log("D3D11CreateDevice import not found: upscaler replacement off");
+    }
     CreateThread(nullptr, 0, Worker, nullptr, 0, nullptr);
 }
 

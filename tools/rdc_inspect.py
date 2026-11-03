@@ -61,6 +61,14 @@ def main():
                     if rid != rd.ResourceId.Null() and rid in tex:
                         t = tex[rid]
                         log.write("  tex %s %dx%d %s\n" % (names.get(rid, rid), t.width, t.height, t.format.Name()))
+        try:
+            for i, u in enumerate(st.GetSamplers(rd.ShaderStage.Pixel)):
+                smp = getattr(u, "sampler", u)
+                f = smp.filter
+                log.write("  PS sampler %d: min=%s mag=%s mip=%s func=%s addressU=%s\n" % (
+                    i, f.minify, f.magnify, f.mip, f.filter, getattr(smp, "addressU", "?")))
+        except Exception as e:
+            log.write("  samplers: %s\n" % e)
         om = d11.outputMerger
         log.write("depth: enable=%s write=%s func=%s | blend0: enable=%s | a2c=%s\n" % (
             om.depthStencilState.depthEnable, om.depthStencilState.depthWrites,
