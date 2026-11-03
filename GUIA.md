@@ -18,7 +18,7 @@ El juego lo relee cada segundo, así que se puede cambiar con el juego abierto. 
 | Clave | Valor recomendado | Qué hace |
 |---|---|---|
 | `Mode` | `1` | 0 = no toca nada (solo log); 1 = `Scale` en diálogos y `BaseScale` fuera; 2 = `Scale` siempre. |
-| `BaseScale` | `0.95` (en prueba) | Escala del 3D fuera de los diálogos, también con FSR1. 1.0 = nativo. |
+| `BaseScale` | `1.0` | Escala del 3D fuera de los diálogos, también con FSR1. 1.0 = nativo. |
 | `Scale` | `0.8` | Escala del 3D por eje mientras está activo (0.8 = 1024x576 → 1280x720). 0.85 se ve algo más nítido con menos margen. |
 | `HotkeyBaseScale` / `HotkeyDialogueScale` | `120` (F9) / `121` (F10) | Cada pulsación pasa a la siguiente escala (1.0 → 0.95 → 0.9 → 0.85 → 0.8 → 0.75 → 1.0) y la guarda en el `.ini`. En la Deck, asignarlas a botones traseros en la configuración de mando de Steam. |
 | `Fields` | `1` | 1 = solo el 3D (UI nítida). No usar 3. |
