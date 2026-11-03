@@ -288,10 +288,11 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
 | Escena | Sin mods | Con mods (dialogue + towns + GBFRelinkFix LOD 0.6 / sombras 512) |
 |---|---|---|
 | Diálogo "Verbose Man" (arbustos detrás) | 26 FPS, 38,2 ms (37,6‑39,4), GPU 99 % / 1443 MHz / 10,2 W | 27 FPS, 37,0 ms (36,4‑37,3), GPU 94 % / 1427 MHz / 9,7 W |
-| Seedhollow, mercado bajo el arco (escalinata roja, NPCs, vegetación) | 27 FPS, 36,5 ms (36,0‑38,3), GPU 94 % / 1419 MHz / 9,7 W, CPU 1,4 GHz | pendiente |
+| Seedhollow, mercado bajo el arco (escalinata roja, NPCs, vegetación) | 27 FPS, 36,5 ms (36,0‑38,3), GPU 94 % / 1419 MHz / 9,7 W, CPU 1,4 GHz | **30 FPS**, 33,5 ms (30,6‑37,0), GPU 93 % / **1282 MHz / 7,8 W**, CPU 2,4 GHz / 3,5 W |
 
 - **Diálogo:** los mods ganan unos 1,2 ms (~3 %). Es real pero insuficiente: faltan ~4 ms para 30 FPS.
 - **Pueblo:** este punto de Seedhollow está **limitado por GPU**, no por CPU (la CPU baja a 1,4 GHz). La vegetación y la escena del mercado mandan, igual que en los diálogos.
+- **Pueblo con mods:** llega al tope de 30 y la GPU necesita menos reloj y energía (1282 MHz / 7,8 W frente a 1419 MHz / 9,7 W). El presupuesto que sobra pasa a la CPU (de 1,4 a 2,4 GHz). Es la mejora más clara medida hasta ahora. La causa más probable es el LOD 0.6 y las sombras 512 de GBFRelinkFix sobre la vegetación lejana; no está separado del mod `towns`. [Cámara casi idéntica, no exacta.]
 
 ---
 
