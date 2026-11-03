@@ -1,0 +1,70 @@
+===== EID 2326 =====
+ShaderStage.Vertex shader Vertex Shader 49823 ()
+ShaderStage.Pixel shader Pixel Shader 49859 ()
+  PS instructions (lines): 341, discard: True, samples: 4
+  tex 2D TextureArray 396 16272x12384 BC7_TYPELESS
+  tex 2D TextureArray 422 16272x12384 BC5_TYPELESS
+  tex 2D TextureArray 448 16272x12384 BC7_TYPELESS
+  tex 2D Texture 364 512x512 R32G32B32A32_TYPELESS
+  tex 2D Render Target 4330 1280x720 R32_TYPELESS
+  tex system/noise/blue_noise_rgba.wtb 64x64 R8G8B8A8_UNORM
+depth: enable=True write=True func=CompareFunction.LessEqual | blend0: enable=False | a2c=False
+raster: cull=CullMode.NoCull fill=FillMode.Solid
+outputs: 2D Render Target 4287, 2D Render Target 4460, 2D Render Target 4298, 2D Render Target 4305
+
+===== EID 2302 =====
+ShaderStage.Vertex shader Vertex Shader 49823 ()
+ShaderStage.Pixel shader Pixel Shader 49859 ()
+  PS instructions (lines): 341, discard: True, samples: 4
+  tex 2D TextureArray 396 16272x12384 BC7_TYPELESS
+  tex 2D TextureArray 422 16272x12384 BC5_TYPELESS
+  tex 2D TextureArray 448 16272x12384 BC7_TYPELESS
+  tex 2D Texture 364 512x512 R32G32B32A32_TYPELESS
+  tex 2D Render Target 4330 1280x720 R32_TYPELESS
+  tex system/noise/blue_noise_rgba.wtb 64x64 R8G8B8A8_UNORM
+depth: enable=True write=True func=CompareFunction.LessEqual | blend0: enable=False | a2c=False
+raster: cull=CullMode.NoCull fill=FillMode.Solid
+outputs: 2D Render Target 4287, 2D Render Target 4460, 2D Render Target 4298, 2D Render Target 4305
+
+===== EID 2400 =====
+ShaderStage.Vertex shader Vertex Shader 49823 ()
+ShaderStage.Pixel shader Pixel Shader 49859 ()
+  PS instructions (lines): 341, discard: True, samples: 4
+  tex 2D TextureArray 396 16272x12384 BC7_TYPELESS
+  tex 2D TextureArray 422 16272x12384 BC5_TYPELESS
+  tex 2D TextureArray 448 16272x12384 BC7_TYPELESS
+  tex 2D Texture 364 512x512 R32G32B32A32_TYPELESS
+  tex 2D Render Target 4330 1280x720 R32_TYPELESS
+  tex system/noise/blue_noise_rgba.wtb 64x64 R8G8B8A8_UNORM
+depth: enable=True write=True func=CompareFunction.LessEqual | blend0: enable=False | a2c=False
+raster: cull=CullMode.NoCull fill=FillMode.Solid
+outputs: 2D Render Target 4287, 2D Render Target 4460, 2D Render Target 4298, 2D Render Target 4305
+
+===== EID 2388 =====
+ShaderStage.Vertex shader Vertex Shader 49823 ()
+ShaderStage.Pixel shader Pixel Shader 49859 ()
+  PS instructions (lines): 341, discard: True, samples: 4
+  tex 2D TextureArray 396 16272x12384 BC7_TYPELESS
+  tex 2D TextureArray 422 16272x12384 BC5_TYPELESS
+  tex 2D TextureArray 448 16272x12384 BC7_TYPELESS
+  tex 2D Texture 364 512x512 R32G32B32A32_TYPELESS
+  tex 2D Render Target 4330 1280x720 R32_TYPELESS
+  tex system/noise/blue_noise_rgba.wtb 64x64 R8G8B8A8_UNORM
+depth: enable=True write=True func=CompareFunction.LessEqual | blend0: enable=False | a2c=False
+raster: cull=CullMode.NoCull fill=FillMode.Solid
+outputs: 2D Render Target 4287, 2D Render Target 4460, 2D Render Target 4298, 2D Render Target 4305
+
+===== EID 2376 =====
+ShaderStage.Vertex shader Vertex Shader 49823 ()
+ShaderStage.Pixel shader Pixel Shader 49859 ()
+  PS instructions (lines): 341, discard: True, samples: 4
+  tex 2D TextureArray 396 16272x12384 BC7_TYPELESS
+  tex 2D TextureArray 422 16272x12384 BC5_TYPELESS
+  tex 2D TextureArray 448 16272x12384 BC7_TYPELESS
+  tex 2D Texture 364 512x512 R32G32B32A32_TYPELESS
+  tex 2D Render Target 4330 1280x720 R32_TYPELESS
+  tex system/noise/blue_noise_rgba.wtb 64x64 R8G8B8A8_UNORM
+depth: enable=True write=True func=CompareFunction.LessEqual | blend0: enable=False | a2c=False
+raster: cull=CullMode.NoCull fill=FillMode.Solid
+outputs: 2D Render Target 4287, 2D Render Target 4460, 2D Render Target 4298, 2D Render Target 4305
+

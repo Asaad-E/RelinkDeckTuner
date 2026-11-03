@@ -347,6 +347,26 @@ Primera variante `fx_all`: todos los grupos apagados, sobre `dialogue` + `towns`
 
 **Conclusión de 7.6‑7.8:** en los diálogos pesados, el coste es por píxel de la geometría cercana: hojas con transparencia superpuestas, sombreado de personajes y luz diferida. El post‑proceso (~1 ms), las sombras y el LOD apenas cuentan. Lo único que ha movido la cifra es reducir píxeles (escala de resolución), y aun así hay escenas (Lyria) que se quedan en 26 FPS a 0.85.
 
+### 7.9 Perfilado con RenderDoc del diálogo "Verbose Man" [MEDIDO en PC]
+
+El juego usa **Direct3D 11**. Captura en el PC (AMD Radeon integrada, misma arquitectura que la Deck; Standard, 1280x720, mismo punto del slot 3). RenderDoc no puede lanzar el juego: el proceso se protege (ni `taskkill` puede cerrarlo). Se cargó desde dentro con el ASI loader y un `.asi` mínimo que hace `LoadLibrary(renderdoc.dll)`. Herramientas: `tools/rdc_pass_costs.py` (coste GPU por draw) y `tools/rdc_inspect.py` (estado de pipeline, shader e imágenes antes/después). Resultados en `notes/renderdoc/`.
+
+| Pase | GPU | % del fotograma |
+|---|---|---|
+| **G‑buffer** (4 targets 1280x720 + profundidad) | **45,4 ms** (85 draws) | 64 % |
+| Mapa de sombras 2048x2048 | 8,0 ms (208 draws) | 11 % |
+| Iluminación / post‑proceso (todo lo demás) | ~17 ms | 25 % |
+| **Total** | **70,5 ms** | |
+
+Dentro del G‑buffer, **un solo draw (EID 2326, malla de 9.366 índices × 19 instancias) cuesta 21,9 ms (31 % del fotograma)**: son los arbustos y árboles detrás del personaje (`notes/renderdoc/vegetation_draw_2326.png`). Cubren solo el 18,5 % de la pantalla. Los 5 draws más caros (21,9 + 3,6 + 3,3 + 3,1 + 2,9 ms ≈ **35 ms, la mitad del fotograma**) usan **el mismo pixel shader de vegetación**:
+- alpha test con `discard`, sin culling (doble cara), profundidad con escritura;
+- texturas virtuales Granite: tabla de páginas, caché de albedo, normal y máscara en arrays de 16272x12384;
+- **escribe feedback de streaming en 3 UAV** (`g_ResolveParam0..2`) antes del `discard`, y luego hace un segundo `discard` por dither (`g_DitherTex`).
+
+Con `discard` + UAV, la GPU no puede descartar píxeles ocultos antes del shader (early‑Z). Cada capa de hojas superpuesta paga la búsqueda en tabla de páginas, la muestra de albedo y la escritura UAV. El coste es **sobredibujado de vegetación**. Esto explica todas las pruebas anteriores: escalar la resolución ayuda (menos píxeles), y ni el post‑proceso, ni las sombras, ni el LOD lo hacen (los arbustos están cerca).
+
+Modelos candidatos por número de índices (por buscar a qué zona pertenecen; los layouts de `pd00` no los nombran como texto): 9366 → `bg012c`, `bg2084`, `bg6735`, `bga238`.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
