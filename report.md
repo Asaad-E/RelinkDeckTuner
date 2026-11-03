@@ -229,6 +229,27 @@ La fila "Custom" de la tabla de presets (§3.2) se rellena con 19 campos de la c
 | 7.2 | Captura de pantalla en un diálogo y en gameplay en el mismo sitio; comparar nitidez del HUD/fondo. | Descarta del todo el cambio de resolución (§3.2). | 1 min |
 | 7.3 | Fase 0 con `LOD 0.6` / `Shadow 128` y repetir 7.1. | Cuánto aportan LOD y sombras. | 5 min |
 
+### 7.4 Resultado de la prueba 7.1 (Deck, sin mods, 2026‑11‑02) [MEDIDO]
+
+Overlay de MangoHud nivel 4, juego de fábrica (v2.0.5). Las fotos están en `notes/deck_baseline/` (no van a git).
+
+| Foto | Escena | FPS | Frametime | GPU: carga / reloj / W | CPU: carga / reloj / W |
+|---|---|---|---|---|---|
+| 01 | Diálogo en el barco, fondo de cielo | **30** | 33,3 ms | 73 % / 998 MHz / 3,2 W | 37 % / 3499 MHz / 6,4 W |
+| 02 | Diálogo en el bosque (p100), vegetación de fondo | **26** | 39,1 ms (38,6–40,1) | **99 %** / 1453 MHz / 10,3 W | 41 % / **1399 MHz** / 1,7 W |
+| 03 | Igual, plano abierto con flores y 3 personajes | **22** | 46,1 ms (45,4–47,7) | **99 %** / ~1400 MHz / 10,2 W | 36 % / 1399 MHz / 1,6 W |
+| 04 | Igual, primer plano con flores detrás | **23** | 43,0 ms (42,6–44,6) | **99 %** / 1425 MHz / 10,5 W | 36 % / 1399 MHz / 1,1 W |
+| 05 | Gameplay en el pueblo inicial (p100 `village`) | **30** | 33,4 ms (27,9–38,1) | 86 % / 1065 MHz / 4,6 W | 46 % / **3255 MHz** / 6,9 W |
+
+**Diálogos: cuello de botella de GPU.** En los diálogos lentos la GPU está al 99 % y se lleva casi todo el presupuesto de 15 W. La CPU baja a 1,4 GHz y apenas consume, y el frametime es plano (carga sostenida, no tirones de carga). Los mismos dos personajes van a 30 FPS con fondo de cielo (01) y a 22‑26 con vegetación detrás (02‑04). Por eso el coste principal es **el fondo**: vegetación densa a corta distancia, más el DOF que la desenfoca y su sombra. Los personajes pesan menos. Para el peor caso hace falta recortar un ~30 % de tiempo de GPU (46 → 33 ms).
+
+**Pueblo: limitado por CPU.** La CPU va a 3,25 GHz y la GPU tiene margen (86 % a solo 1065 MHz). Mantiene 30 FPS, pero con un frametime de 28‑38 ms, rozando el límite. Ningún núcleo llega al 100 %, lo que encaja con un hilo principal que salta entre núcleos.
+
+**Consecuencias para el mod:**
+- El pueblo inicial es `p100` (Zinkenstill), **no** `pc00`/`pd00`: el mod `towns` no lo toca. `p100` tiene 57 NPCs colocados frente a 298/236 de los pueblos grandes, así que en Folca/Seedhollow (`pc00`/`pd00`) cabe esperar bajadas reales por CPU.
+- En diálogos exteriores de día, las 1.412 luces puntuales con sombra (§3.3a) probablemente no están presentes. Por tanto, el mod `dialogue` solo ayudará en interiores y escenas nocturnas. Para estas escenas, las palancas con más efecto son: **LOD/densidad de fondo** (`Background Models`, multiplicador de LOD de GBFRelinkFix), **resolución de sombras** y **DOF**. Si no basta, la vía segura es bajar la escala de render solo durante los diálogos (fase 2, `0x6bbaa0`).
+- Queda abierta la 7.2 (nitidez); el patrón de GPU no la necesita para decidir.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
