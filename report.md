@@ -281,6 +281,18 @@ Configuración: mods `dialogue` + `towns` (data.i parcheado con `tools/patch_ind
 - El diálogo de fábrica medido no es el mismo que el de 27 FPS con mods (la partida avanzó), así que no sirve de A/B. Para eso se ha dejado una partida fija en el **slot 3** (copia en `~/Documents/gbfr_benchmark_save/` en la Deck), justo antes de esos diálogos.
 
 
+### 7.6 A/B con la partida fija del slot 3 [MEDIDO]
+
+Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
+
+| Escena | Sin mods | Con mods (dialogue + towns + GBFRelinkFix LOD 0.6 / sombras 512) |
+|---|---|---|
+| Diálogo "Verbose Man" (arbustos detrás) | 26 FPS, 38,2 ms (37,6‑39,4), GPU 99 % / 1443 MHz / 10,2 W | 27 FPS, 37,0 ms (36,4‑37,3), GPU 94 % / 1427 MHz / 9,7 W |
+| Seedhollow, mercado bajo el arco (escalinata roja, NPCs, vegetación) | 27 FPS, 36,5 ms (36,0‑38,3), GPU 94 % / 1419 MHz / 9,7 W, CPU 1,4 GHz | pendiente |
+
+- **Diálogo:** los mods ganan unos 1,2 ms (~3 %). Es real pero insuficiente: faltan ~4 ms para 30 FPS.
+- **Pueblo:** este punto de Seedhollow está **limitado por GPU**, no por CPU (la CPU baja a 1,4 GHz). La vegetación y la escena del mercado mandan, igual que en los diálogos.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
