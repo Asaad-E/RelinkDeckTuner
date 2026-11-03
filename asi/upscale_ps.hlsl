@@ -29,7 +29,7 @@ float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
     float2 f = p - base;
     float4 wx = CatmullRomWeights(f.x);
     float4 wy = CatmullRomWeights(f.y);
-    int2 maxc = int2(size) - 1;
+    int2 maxc = max(int2(size) - 1, int2(0, 0));
     float3 acc = 0;
     [unroll] for (int j = 0; j < 4; j++)
     {

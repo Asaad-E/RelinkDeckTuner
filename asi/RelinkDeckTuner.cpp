@@ -45,6 +45,7 @@ struct Config {
 
 uintptr_t g_base;
 volatile LONG64* g_camHits;
+volatile LONG64* g_frames;  // bumped once per frame by the main loop (render-size update)
 char g_iniPath[MAX_PATH], g_logPath[MAX_PATH];
 FILE* g_log;
 
@@ -92,14 +93,18 @@ HRESULT STDMETHODCALLTYPE HookedCreatePixelShader(void* device, const void* code
 }
 
 void HookDeviceVtable(void* device) {
+    static SRWLOCK lock = SRWLOCK_INIT;  // devices created from several threads must not race here
+    AcquireSRWLockExclusive(&lock);
     void** vtbl = *static_cast<void***>(device);
-    if (vtbl[kCreatePixelShaderSlot] == reinterpret_cast<void*>(&HookedCreatePixelShader)) return;
     DWORD old;
-    if (!VirtualProtect(&vtbl[kCreatePixelShaderSlot], sizeof(void*), PAGE_READWRITE, &old)) return;
-    g_realCreatePixelShader = reinterpret_cast<CreatePixelShaderFn>(vtbl[kCreatePixelShaderSlot]);
-    vtbl[kCreatePixelShaderSlot] = reinterpret_cast<void*>(&HookedCreatePixelShader);
-    VirtualProtect(&vtbl[kCreatePixelShaderSlot], sizeof(void*), old, &old);
-    Log("ID3D11Device::CreatePixelShader hooked");
+    if (vtbl[kCreatePixelShaderSlot] != reinterpret_cast<void*>(&HookedCreatePixelShader) &&
+        VirtualProtect(&vtbl[kCreatePixelShaderSlot], sizeof(void*), PAGE_READWRITE, &old)) {
+        g_realCreatePixelShader = reinterpret_cast<CreatePixelShaderFn>(vtbl[kCreatePixelShaderSlot]);
+        vtbl[kCreatePixelShaderSlot] = reinterpret_cast<void*>(&HookedCreatePixelShader);
+        VirtualProtect(&vtbl[kCreatePixelShaderSlot], sizeof(void*), old, &old);
+        Log("ID3D11Device::CreatePixelShader hooked");
+    }
+    ReleaseSRWLockExclusive(&lock);
 }
 
 HRESULT WINAPI HookedCreateDevice(void* adapter, int driverType, HMODULE sw, UINT flags, const void* levels,
@@ -117,6 +122,7 @@ bool HookImport(const char* dll, const char* func, void* hook, void** original) 
     auto& dir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
     for (auto* imp = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(base + dir.VirtualAddress); imp->Name; imp++) {
         if (_stricmp(reinterpret_cast<char*>(base + imp->Name), dll) != 0) continue;
+        if (!imp->OriginalFirstThunk) continue;  // no name table: cannot match by name
         auto* names = reinterpret_cast<IMAGE_THUNK_DATA*>(base + imp->OriginalFirstThunk);
         auto* slots = reinterpret_cast<IMAGE_THUNK_DATA*>(base + imp->FirstThunk);
         for (; names->u1.AddressOfData; names++, slots++) {
@@ -145,6 +151,7 @@ void* AllocNear(uintptr_t target, size_t size) {
     for (uintptr_t delta = gran; delta < 0x70000000; delta += gran) {
         for (int sign = -1; sign <= 1; sign += 2) {
             uintptr_t addr = ((target + sign * (intptr_t)delta) / gran) * gran;
+            if (addr == 0) continue;
             void* p = VirtualAlloc(reinterpret_cast<void*>(addr), size, MEM_COMMIT | MEM_RESERVE,
                                    PAGE_EXECUTE_READWRITE);
             if (p) return p;
@@ -153,32 +160,35 @@ void* AllocNear(uintptr_t target, size_t size) {
     return nullptr;
 }
 
-bool InstallCamHook() {
-    uintptr_t site = g_base + kCamHook;
+// Counting hook: replaces `len` bytes of position-independent code at `site` with a jump to a
+// trampoline that does `lock inc qword [counter]`, runs the original bytes and jumps back.
+volatile LONG64* InstallCounterHook(uintptr_t site, const uint8_t* orig, size_t len) {
     auto* tramp = static_cast<uint8_t*>(AllocNear(site, 0x1000));
-    if (!tramp) return false;
+    if (!tramp || len < 5 || len > 16) return nullptr;
+    intptr_t dist = reinterpret_cast<intptr_t>(tramp) - static_cast<intptr_t>(site + 5);
+    if (dist < INT32_MIN + 0x1000 || dist > INT32_MAX - 0x1000) return nullptr;  // jmp rel32 range
     uint8_t* p = tramp;
-    // lock inc qword ptr [rip + off] -> counter stored at tramp+0x100
-    g_camHits = reinterpret_cast<volatile LONG64*>(tramp + 0x100);
-    *p++ = 0xf0; *p++ = 0x48; *p++ = 0xff; *p++ = 0x05;
+    *p++ = 0xf0; *p++ = 0x48; *p++ = 0xff; *p++ = 0x05;  // lock inc qword ptr [rip + rel]
     int32_t rel = static_cast<int32_t>((tramp + 0x100) - (p + 4));
     memcpy(p, &rel, 4); p += 4;
-    memcpy(p, kCamHookBytes, sizeof(kCamHookBytes)); p += sizeof(kCamHookBytes);  // original code
-    *p++ = 0xff; *p++ = 0x25; *p++ = 0; *p++ = 0; *p++ = 0; *p++ = 0;              // jmp [rip+0]
-    uintptr_t resume = g_base + kCamResume;
+    memcpy(p, orig, len); p += len;                         // original code
+    *p++ = 0xff; *p++ = 0x25; *p++ = 0; *p++ = 0; *p++ = 0; *p++ = 0;  // jmp [rip+0]
+    uintptr_t resume = site + len;
     memcpy(p, &resume, 8);
 
-    uint8_t patch[sizeof(kCamHookBytes)];
+    FlushInstructionCache(GetCurrentProcess(), tramp, 0x1000);
+
+    uint8_t patch[16];
     memset(patch, 0x90, sizeof(patch));
     patch[0] = 0xe9;
     rel = static_cast<int32_t>(reinterpret_cast<uintptr_t>(tramp) - (site + 5));
     memcpy(patch + 1, &rel, 4);
     DWORD old;
-    VirtualProtect(reinterpret_cast<void*>(site), sizeof(patch), PAGE_EXECUTE_READWRITE, &old);
-    memcpy(reinterpret_cast<void*>(site), patch, sizeof(patch));
-    VirtualProtect(reinterpret_cast<void*>(site), sizeof(patch), old, &old);
-    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), sizeof(patch));
-    return true;
+    VirtualProtect(reinterpret_cast<void*>(site), len, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(reinterpret_cast<void*>(site), patch, len);
+    VirtualProtect(reinterpret_cast<void*>(site), len, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), len);
+    return reinterpret_cast<volatile LONG64*>(tramp + 0x100);
 }
 
 void ReadConfig(Config& c) {
@@ -186,11 +196,26 @@ void ReadConfig(Config& c) {
     c.mode = GetPrivateProfileIntA("RelinkDeckTuner", "Mode", 1, g_iniPath);
     GetPrivateProfileStringA("RelinkDeckTuner", "Scale", "0.75", buf, sizeof(buf), g_iniPath);
     c.scale = atof(buf);
-    if (c.scale < 0.4) c.scale = 0.4;
+    if (!(c.scale >= 0.4)) c.scale = 0.4;  // also catches NaN
     if (c.scale > 1.0) c.scale = 1.0;
     c.fields = GetPrivateProfileIntA("RelinkDeckTuner", "Fields", 3, g_iniPath);
     c.exitDelayMs = GetPrivateProfileIntA("RelinkDeckTuner", "ExitDelayMs", 700, g_iniPath);
+    if (c.exitDelayMs < 0) c.exitDelayMs = 0;
     c.logPeriodMs = GetPrivateProfileIntA("RelinkDeckTuner", "LogPeriodMs", 2000, g_iniPath);
+}
+
+// Write width/height pairs as single 64-bit stores so the main thread, which copies these fields
+// every frame, never sees a new width with an old height.
+void StoreSizes(int32_t* dst, const int32_t* src) {
+    for (int pair = 0; pair < 2; pair++) {
+        int64_t v;
+        memcpy(&v, src + pair * 2, sizeof(v));
+        auto* d = dst + pair * 2;
+        if ((reinterpret_cast<uintptr_t>(d) & 7) == 0)
+            InterlockedExchange64(reinterpret_cast<volatile LONG64*>(d), v);
+        else
+            memcpy(d, &v, sizeof(v));
+    }
 }
 
 int32_t* Row(uint32_t index) {
@@ -201,7 +226,7 @@ DWORD WINAPI Worker(LPVOID) {
     Config cfg;
     ReadConfig(cfg);
     FILETIME lastIni{};
-    LONG64 lastHits = 0, logHits = 0;
+    LONG64 lastHits = 0, logHits = 0, logFrames = 0;
     ULONGLONG lastHitTime = 0, lastLog = 0, lastIniCheck = 0;
     bool inDialogue = false, applied = false;
     uint32_t appliedIndex = 0;
@@ -245,20 +270,20 @@ DWORD WINAPI Worker(LPVOID) {
                 memcpy(old + 9, orig, sizeof(orig));  // leave the preset we left untouched
             applied = false;
         }
-        if (want && !applied) {
+        if (want && !applied && row[9] > 0 && row[10] > 0) {  // skip rows the game has not filled yet
             memcpy(orig, row + 9, sizeof(orig));
             memcpy(wrote, orig, sizeof(wrote));
             for (int i = 0; i < 4; i++) {
                 bool on = (i < 2) ? (cfg.fields & 1) : (cfg.fields & 2);
                 if (on) wrote[i] = static_cast<int32_t>(orig[i] * cfg.scale) & ~1;
             }
-            memcpy(row + 9, wrote, sizeof(wrote));
+            StoreSizes(row + 9, wrote);
             applied = true;
             appliedIndex = index;
             Log("apply: preset %u  %dx%d / %dx%d -> %dx%d / %dx%d", index, orig[0], orig[1], orig[2], orig[3],
                 wrote[0], wrote[1], wrote[2], wrote[3]);
         } else if (!want && applied) {
-            memcpy(row + 9, orig, sizeof(orig));
+            StoreSizes(row + 9, orig);
             applied = false;
             Log("restore: preset %u  %dx%d / %dx%d", index, orig[0], orig[1], orig[2], orig[3]);
         }
@@ -266,11 +291,14 @@ DWORD WINAPI Worker(LPVOID) {
         if (cfg.logPeriodMs > 0 && now - lastLog >= static_cast<ULONGLONG>(cfg.logPeriodMs)) {
             // The dialogue camera updates once per rendered frame, so hits per second = dialogue FPS.
             double dlgFps = lastLog ? (hits - logHits) * 1000.0 / static_cast<double>(now - lastLog) : 0.0;
+            LONG64 frames = g_frames ? *g_frames : 0;
+            double fps = lastLog ? (frames - logFrames) * 1000.0 / static_cast<double>(now - lastLog) : 0.0;
             logHits = hits;
+            logFrames = frames;
             lastLog = now;
             auto* g = reinterpret_cast<int32_t*>(g_base + kRenderSize);
-            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d dialogueFps=%.1f dialogue=%d applied=%d",
-                index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], dlgFps, inDialogue, applied);
+            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f dialogueFps=%.1f dialogue=%d applied=%d",
+                index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], fps, dlgFps, inDialogue, applied);
         }
     }
 }
@@ -284,7 +312,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.5 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.7 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
@@ -294,11 +322,14 @@ void Init(HMODULE self) {
         Log("camera hook site differs (game version or another mod patched it): disabled");
         return;
     }
-    if (!InstallCamHook()) {
+    g_camHits = InstallCounterHook(g_base + kCamHook, kCamHookBytes, sizeof(kCamHookBytes));
+    if (!g_camHits) {
         Log("could not allocate trampoline: disabled");
         return;
     }
     Log("camera hook installed at +%zx", kCamHook);
+    g_frames = InstallCounterHook(g_base + kSizeCopy, kSizeCopyBytes, 6);  // push r15/r14/r13
+    Log(g_frames ? "frame counter installed at +%zx" : "frame counter not installed (+%zx)", kSizeCopy);
     g_upscaler = GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath);
     if (g_upscaler == 1 || g_upscaler == 2) {
         if (HookImport("d3d11.dll", "D3D11CreateDevice", reinterpret_cast<void*>(&HookedCreateDevice),

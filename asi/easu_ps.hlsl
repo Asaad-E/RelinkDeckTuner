@@ -35,8 +35,9 @@ AF4 FsrEasuBF(AF2 p) { return AF4(gQ01.b, gQ11.b, gQ10.b, gQ00.b); }
 
 float4 main(float4 pos : SV_Position, float2 uv : TEXCOORD0) : SV_Target
 {
-    gMax = int2(orgScreen.xy) - 1;
-    float2 outSize = round(1.0 / abs(float2(ddx(uv.x), ddy(uv.y))));
+    gMax = max(int2(orgScreen.xy) - 1, int2(0, 0));
+    float2 duv = max(abs(float2(ddx(uv.x), ddy(uv.y))), 1e-6);
+    float2 outSize = clamp(round(1.0 / duv), 1.0, 16384.0);  // full-screen pass: uv step = 1 / output size
     AU4 con0, con1, con2, con3;
     FsrEasuCon(con0, con1, con2, con3, orgScreen.x, orgScreen.y, orgScreen.x, orgScreen.y, outSize.x, outSize.y);
     AF3 c;
