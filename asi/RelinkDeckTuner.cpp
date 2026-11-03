@@ -382,14 +382,14 @@ bool InstallEntryHook(uintptr_t rva, const uint8_t* orig, size_t len, EntryHookF
 // Background Models, Effects, Decals).
 const double kMenuScales[] = {1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7};
 const double kMenuUpscalers[] = {1, 2};
-const double kMenuVeg[] = {1.0, 0.05, 0.0};
+const double kMenuVeg[] = {1.0, 0.3, 0.05, 0.0};
 const double kMenuLod[] = {1.0, 0.3, 0.1};
 struct MenuItem { uint32_t key; const char* iniKey; const double* values; int count; const char* format; };
 const MenuItem kMenu[] = {
     {0x2f6f51d1, "BaseScale", kMenuScales, 7, "%.2f"},
     {0xfbce1e5b, "Scale", kMenuScales, 7, "%.2f"},
     {0x4c1d6fce, "Upscaler", kMenuUpscalers, 2, "%.0f"},
-    {0x4c37cdf9, "DialogueVegetationLod", kMenuVeg, 3, "%.2f"},
+    {0x4c37cdf9, "DialogueVegetationLod", kMenuVeg, 4, "%.2f"},
     {0xffd48260, "DialogueLodBias", kMenuLod, 3, "%.2f"},
 };
 constexpr int kMenuCount = sizeof(kMenu) / sizeof(kMenu[0]);

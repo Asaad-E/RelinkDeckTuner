@@ -196,6 +196,7 @@ def build_options(arc, mod):
 # new names, descriptions and labels. Must match kMenu in RelinkDeckTuner.cpp.
 PCT_LABELS = [(f"TXT_RDT_PCT_{p}", f"{p}%") for p in (100, 95, 90, 85, 80, 75, 70)]
 LEVEL_LABELS = [("TXT_RDT_LVL_NORMAL", "Normal"), ("TXT_RDT_LVL_REDUCED", "Reduced"), ("TXT_RDT_LVL_MINIMUM", "Minimum")]
+VEG_LABELS = LEVEL_LABELS[:1] + [("TXT_RDT_LVL_LIGHT", "Light")] + LEVEL_LABELS[1:]
 MENU_OPTIONS = [  # (key of the reused hidden option, name, description, labels, default label index)
     (0x2f6f51d1, ("TXT_RDT_OPT_BASE_SCALE", "Resolution Scale"),
      ("TXT_RDT_OPT_BASE_SCALE_INFO", "3D render scale outside dialogues.\nLower values raise the frame rate.\n(Relink Deck Tuner)"),
@@ -210,7 +211,7 @@ MENU_OPTIONS = [  # (key of the reused hidden option, name, description, labels,
     (0x4c37cdf9, ("TXT_RDT_OPT_DLG_VEG", "Dialogue Vegetation"),
      ("TXT_RDT_OPT_DLG_VEG_INFO",
       "Vegetation detail during dialogues.\nReduced looks almost the same\nand is much faster.\n(Relink Deck Tuner)"),
-     LEVEL_LABELS, 1),
+     VEG_LABELS, 2),
     (0xffd48260, ("TXT_RDT_OPT_DLG_LOD", "Dialogue Scenery Detail"),
      ("TXT_RDT_OPT_DLG_LOD_INFO", "Detail of buildings and props\nduring dialogues.\n(Relink Deck Tuner)"),
      LEVEL_LABELS, 0),

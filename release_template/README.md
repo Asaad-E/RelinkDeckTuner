@@ -49,7 +49,7 @@ Check: the company logos are skipped at startup, and `scripts/RelinkDeckTuner.lo
 | Resolution Scale | 100 % … 70 % | 100 % | `BaseScale` |
 | Dialogue Resolution | 100 % … 70 % | 80 % | `Scale` |
 | Upscaler | FSR 1.0 / Bicubic | FSR 1.0 | `Upscaler` (after restarting the game) |
-| Dialogue Vegetation | Normal / Reduced / Minimum | Reduced | `DialogueVegetationLod` (1.0 / 0.05 / 0) |
+| Dialogue Vegetation | Normal / Light / Reduced / Minimum | Reduced | `DialogueVegetationLod` (1.0 / 0.3 / 0.05 / 0) |
 | Dialogue Scenery Detail | Normal / Reduced / Minimum | Normal | `DialogueLodBias` (1.0 / 0.3 / 0.1) |
 
 These rows reuse five hidden options of the game (shadow quality, character/background models, effects, decals), which have no effect on PC; the plugin answers them instead.
