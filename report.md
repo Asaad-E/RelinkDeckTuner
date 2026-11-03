@@ -298,7 +298,10 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
 
 - **Detección de diálogo:** el gancho en `0x942698` (cámara de cinemática) se ejecuta una vez por fotograma durante el diálogo (919 llamadas en 36 s) y **0** veces caminando por el pueblo. Es una señal válida. [VERIFICADO en el log]
 - En la Deck, la fila de preset activa es la 5 (Custom) con `1280,720,1280,720`. Las globales `0x6b822e0..ec` son iguales.
-- Bajada de resolución solo en diálogo (`Mode = 1`, `Scale = 0.75`): activada en caliente a las 21:56. Resultado pendiente.
+- Bajada de resolución solo en diálogo (`Mode = 1`, `Scale = 0.75`), activada en caliente a las 21:56. **Funciona:** al empezar el diálogo, la fila y las globales pasan a `960,540,960,540` y el render baja.
+  - Diálogo "Bon Vivant" (vegetación detrás): **30 FPS estables, 33,3 ms (31,5‑35,6)**, GPU 80 % / 956 MHz / 4,0 W. Antes, diálogos así iban a 26‑27 FPS con la GPU al 99 % y 10 W.
+  - El usuario lo ve "más borroso pero manejable".
+  - Como sobra mucha GPU, se sube a `Scale = 0.85` (1088x612) para el siguiente diálogo.
 
 **Pendiente: pueblos/ciudad.** Con `LOD Multiplier = 0.75` (antes 0.6), el usuario nota **más tirones en el pueblo** y un **uso muy alto en la ciudad** (Seedhollow). Hay que reducir el coste ahí sin volver a 0.6 en todas partes. Opciones:
 - LOD por zona: 0.6 solo en pueblos.
