@@ -9,12 +9,17 @@
 //
 // Upscaler: the engine's temporal upsampler is replaced by FSR1 EASU or bicubic (see below).
 //
+// In-game menu: the menu data mod turns five hidden drop-down rows of the Graphics page into our
+// settings. Hooks on the option getter (0x20d320) and setter (0x2096b0) answer those keys with the
+// current setting and receive the player's choice on Apply, which is saved to the .ini.
+//
 // The .ini next to the .asi is re-read every second (can be edited while the game runs);
 // the .log next to it records what happens.
 #define _CRT_SECURE_NO_WARNINGS
 #include <windows.h>
 #include <cstdarg>
 #include <cstdint>
+#include <cmath>
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
@@ -44,6 +49,14 @@ const float kLodFactorDefault[2] = {0.25f, 1.0f};
 constexpr uintptr_t kVegLodHook = 0x23a4ba5;
 const uint8_t kVegLodHookBytes[] = {0x48, 0x8d, 0x05, 0xec, 0x73, 0x10, 0x03,   // lea rax, [rip+...]
                                     0xc4, 0xa1, 0x62, 0x59, 0x1c, 0x90};        // vmulss xmm3,xmm3,[rax+r10*4]
+
+// Option getter (settings, out variant*, key) and setter (settings, const variant*, key). For keys
+// they do not know, the getter returns 0 and the setter drops the value, so both are safe to answer
+// ourselves. Variant: int at +0, alternative index byte at +0x20 (0 = int).
+constexpr uintptr_t kOptionGetter = 0x20d320;
+constexpr uintptr_t kOptionSetter = 0x2096b0;
+const uint8_t kOptionGetterBytes[] = {0x55, 0x56, 0x57, 0x53, 0x48, 0x83, 0xec, 0x58};  // push rbp/rsi/rdi/rbx; sub rsp,58h
+const uint8_t kOptionSetterBytes[] = {0x55, 0x56, 0x57, 0x53, 0x48, 0x83, 0xec, 0x38};  // push rbp/rsi/rdi/rbx; sub rsp,38h
 
 const uint8_t kSizeCopyBytes[] = {0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x56, 0x57, 0x55, 0x53,
                                   0x48, 0x83, 0xec, 0x38, 0x8b, 0x05, 0x8a, 0x8e, 0x97, 0x06};
@@ -321,6 +334,106 @@ void SetVegFactor(float v) {
     Log("vegetation LOD factor -> %.2f", v);
 }
 
+// Entry hook: fn(rcx, rdx, r8) runs first with the original arguments; if it returns true the hooked
+// function returns at once, otherwise its original prologue runs and execution continues.
+using EntryHookFn = bool (*)(uintptr_t, uintptr_t, uint32_t);
+
+bool InstallEntryHook(uintptr_t rva, const uint8_t* orig, size_t len, EntryHookFn fn) {
+    uintptr_t site = g_base + rva;
+    if (!BytesMatch(rva, orig, len) || len < 5 || len > 16) return false;
+    auto* tramp = static_cast<uint8_t*>(AllocNear(site, 0x100));
+    if (!tramp) return false;
+    intptr_t dist = reinterpret_cast<intptr_t>(tramp) - static_cast<intptr_t>(site + 5);
+    if (dist < INT32_MIN + 0x1000 || dist > INT32_MAX - 0x1000) return false;
+    uint8_t* p = tramp;
+    auto bytes = [&](std::initializer_list<uint8_t> b) { for (uint8_t x : b) *p++ = x; };
+    // Entry rsp = 8 mod 16: 4 pushes + 0x28 leave it 16-aligned with shadow space for the call.
+    bytes({0x51, 0x52, 0x41, 0x50, 0x41, 0x51});        // push rcx; push rdx; push r8; push r9
+    bytes({0x48, 0x83, 0xec, 0x28});                    // sub rsp, 28h
+    bytes({0x48, 0xb8}); auto f = reinterpret_cast<uintptr_t>(fn); memcpy(p, &f, 8); p += 8;  // mov rax, fn
+    bytes({0xff, 0xd0});                                // call rax
+    bytes({0x48, 0x83, 0xc4, 0x28});                    // add rsp, 28h
+    bytes({0x41, 0x59, 0x41, 0x58, 0x5a, 0x59});        // pop r9; pop r8; pop rdx; pop rcx
+    bytes({0x84, 0xc0});                                // test al, al
+    bytes({0x74, 0x01});                                // jz original
+    bytes({0xc3});                                      // ret (handled)
+    memcpy(p, orig, len); p += len;                     // original: prologue
+    bytes({0xff, 0x25, 0, 0, 0, 0});                    // jmp [rip+0]
+    uintptr_t resume = site + len;
+    memcpy(p, &resume, 8);
+    FlushInstructionCache(GetCurrentProcess(), tramp, 0x100);
+
+    uint8_t patch[16];
+    memset(patch, 0x90, sizeof(patch));
+    patch[0] = 0xe9;
+    int32_t rel = static_cast<int32_t>(dist);
+    memcpy(patch + 1, &rel, 4);
+    DWORD old;
+    VirtualProtect(reinterpret_cast<void*>(site), len, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(reinterpret_cast<void*>(site), patch, len);
+    VirtualProtect(reinterpret_cast<void*>(site), len, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), len);
+    return true;
+}
+
+// ---------- in-game menu ----------
+// Rows, labels and defaults come from the menu data mod (tools/build_mod.py MENU_OPTIONS); label i
+// of a row is value i here. The keys are the reused hidden options (Shadow Quality, Character Models,
+// Background Models, Effects, Decals).
+const double kMenuScales[] = {1.0, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7};
+const double kMenuUpscalers[] = {1, 2};
+const double kMenuVeg[] = {1.0, 0.05, 0.0};
+const double kMenuLod[] = {1.0, 0.3, 0.1};
+struct MenuItem { uint32_t key; const char* iniKey; const double* values; int count; const char* format; };
+const MenuItem kMenu[] = {
+    {0x2f6f51d1, "BaseScale", kMenuScales, 7, "%.2f"},
+    {0xfbce1e5b, "Scale", kMenuScales, 7, "%.2f"},
+    {0x4c1d6fce, "Upscaler", kMenuUpscalers, 2, "%.0f"},
+    {0x4c37cdf9, "DialogueVegetationLod", kMenuVeg, 3, "%.2f"},
+    {0xffd48260, "DialogueLodBias", kMenuLod, 3, "%.2f"},
+};
+constexpr int kMenuCount = sizeof(kMenu) / sizeof(kMenu[0]);
+volatile LONG g_menuIndex[kMenuCount];                           // what the getter answers
+volatile LONG g_menuSeen[kMenuCount];                            // the menu has shown the row
+volatile LONG g_menuPending[kMenuCount] = {-1, -1, -1, -1, -1};  // chosen on Apply, saved by the worker
+volatile LONG g_menuGets, g_menuIgnored;
+
+int MenuSlot(uint32_t key) {
+    for (int i = 0; i < kMenuCount; i++)
+        if (kMenu[i].key == key) return i;
+    return -1;
+}
+
+int NearestIndex(const MenuItem& m, double v) {
+    int best = 0;
+    for (int i = 1; i < m.count; i++)
+        if (fabs(m.values[i] - v) < fabs(m.values[best] - v)) best = i;
+    return best;
+}
+
+bool OnOptionGet(uintptr_t, uintptr_t out, uint32_t key) {
+    int i = MenuSlot(key);
+    if (i < 0) return false;
+    *reinterpret_cast<int32_t*>(out) = g_menuIndex[i];  // same writes as the getter's own start
+    *reinterpret_cast<uint8_t*>(out + 0x20) = 0;
+    InterlockedExchange(&g_menuSeen[i], 1);
+    InterlockedIncrement(&g_menuGets);
+    return true;
+}
+
+// The game also calls the setter at startup with the saved value of every option (1 for these
+// hidden ones); only values set after the menu has shown the row are the player's.
+bool OnOptionSet(uintptr_t, uintptr_t value, uint32_t key) {
+    int i = MenuSlot(key);
+    if (i < 0) return false;
+    int32_t v = *reinterpret_cast<const int32_t*>(value);
+    if (g_menuSeen[i] && *reinterpret_cast<const uint8_t*>(value + 0x20) == 0 && v >= 0 && v < kMenu[i].count)
+        InterlockedExchange(&g_menuPending[i], v);
+    else
+        InterlockedIncrement(&g_menuIgnored);
+    return true;
+}
+
 // TSC ticks per millisecond, measured against QueryPerformanceCounter over ~200 ms.
 double CalibrateTscPerMs() {
     LARGE_INTEGER f, q0, q1;
@@ -397,6 +510,26 @@ double NextStep(double cur) {
     return kScaleSteps[0];
 }
 
+void UpdateMenuIndex(const Config& c) {
+    const double cur[kMenuCount] = {c.baseScale, c.scale,
+                                    static_cast<double>(GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath)),
+                                    c.vegLodBias, c.lodBias};
+    for (int i = 0; i < kMenuCount; i++) InterlockedExchange(&g_menuIndex[i], NearestIndex(kMenu[i], cur[i]));
+}
+
+// Saves the values chosen in the menu; the .ini change is then picked up like a manual edit.
+void SaveMenuChoices() {
+    for (int i = 0; i < kMenuCount; i++) {
+        LONG v = InterlockedExchange(&g_menuPending[i], -1);
+        if (v < 0) continue;
+        char buf[16];
+        snprintf(buf, sizeof(buf), kMenu[i].format, kMenu[i].values[v]);
+        WritePrivateProfileStringA("RelinkDeckTuner", kMenu[i].iniKey, buf, g_iniPath);
+        InterlockedExchange(&g_menuIndex[i], v);
+        Log("menu: %s -> %s%s", kMenu[i].iniKey, buf, i == 2 ? " (applies after restarting the game)" : "");
+    }
+}
+
 bool KeyPressed(int vk, bool& wasDown) {
     if (!vk) return false;
     bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
@@ -420,6 +553,7 @@ DWORD WINAPI Worker(LPVOID) {
     LONG64 lastSlow = 0;
     Config cfg;
     ReadConfig(cfg);
+    UpdateMenuIndex(cfg);
     FILETIME lastIni{};
     LONG64 lastHits = 0, logHits = 0, logFrames = 0;
     ULONGLONG lastHitTime = 0, lastLog = 0, lastIniCheck = 0;
@@ -439,12 +573,14 @@ DWORD WINAPI Worker(LPVOID) {
                 CompareFileTime(&fa.ftLastWriteTime, &lastIni) != 0) {
                 lastIni = fa.ftLastWriteTime;
                 ReadConfig(cfg);
+                UpdateMenuIndex(cfg);
                 Log("config: Mode=%d Scale=%.2f BaseScale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f DialogueVegetationLod=%.2f",
                     cfg.mode, cfg.scale, cfg.baseScale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias,
                     cfg.vegLodBias);
             }
         }
 
+        SaveMenuChoices();
         if (KeyPressed(cfg.keyBase, baseKeyDown)) {
             cfg.baseScale = NextStep(cfg.baseScale);
             SaveScale("BaseScale", cfg.baseScale);
@@ -515,9 +651,9 @@ DWORD WINAPI Worker(LPVOID) {
             }
             lastLog = now;
             auto* g = reinterpret_cast<int32_t*>(g_base + kRenderSize);
-            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f maxFrameMs=%.1f slow40=%lld dialogueFps=%.1f dialogue=%d applied=%d vegLods=%lld",
+            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f maxFrameMs=%.1f slow40=%lld dialogueFps=%.1f dialogue=%d applied=%d vegLods=%lld menuReads=%ld menuIgnored=%ld",
                 index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], fps, maxMs, slow, dlgFps,
-                inDialogue, applied, g_veg ? g_veg->hits : 0LL);
+                inDialogue, applied, g_veg ? g_veg->hits : 0LL, g_menuGets, g_menuIgnored);
         }
     }
 }
@@ -531,7 +667,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.12 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.13 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
@@ -559,6 +695,17 @@ void Init(HMODULE self) {
     Log(g_veg ? "vegetation LOD hook installed at +%zx" : "vegetation LOD hook not installed (+%zx): DialogueVegetationLod off",
         kVegLodHook);
     Log(g_frames ? "frame counter installed at +%zx" : "frame counter not installed (+%zx)", kSizeCopy);
+    {
+        // Before the worker starts: the getter may run as soon as the hook is in.
+        Config c;
+        ReadConfig(c);
+        UpdateMenuIndex(c);
+    }
+    bool getter = InstallEntryHook(kOptionGetter, kOptionGetterBytes, sizeof(kOptionGetterBytes), OnOptionGet);
+    bool setter = getter && InstallEntryHook(kOptionSetter, kOptionSetterBytes, sizeof(kOptionSetterBytes), OnOptionSet);
+    Log(getter && setter ? "menu hooks installed (option getter +%zx, setter +%zx)"
+                         : "menu hooks not installed (getter +%zx, setter +%zx): menu options inactive",
+        kOptionGetter, kOptionSetter);
     g_upscaler = GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath);
     if (g_upscaler == 1 || g_upscaler == 2) {
         if (HookImport("d3d11.dll", "D3D11CreateDevice", reinterpret_cast<void*>(&HookedCreateDevice),

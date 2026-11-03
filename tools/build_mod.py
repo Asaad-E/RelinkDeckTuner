@@ -9,6 +9,7 @@ Produces three independent Reloaded-II mods (each depends on the GBFR Mod Manage
   RelinkDeckTuner.Towns     A3  simple-shadow / fog-downscale quality flags in town filters
                             A4  no volumetric light in pc00 church
                             A5  (optional) scale NPC crowd density
+  RelinkDeckTuner.Menu      A6  RelinkDeckTuner settings as Graphics options (--menu-only builds just this)
 Every output file is re-parsed and diffed against the original; only the intended
 fields may differ, otherwise the build fails. A manifest.txt lists each change.
 """
@@ -188,6 +189,130 @@ def build_options(arc, mod):
             mod.changes.append(f"{path}: filled {len(patches)} empty option labels")
 
 
+# ---------- A6: Deck Tuner menu ----------
+# Five hidden drop-down rows of the Graphics page are repurposed as RelinkDeckTuner settings: the
+# .asi answers the game's option getter for these keys and receives the value on Apply. Only new text
+# ids are added (descriptions wrap by hand, ~36 characters per line like the game's own); the rows get
+# new names, descriptions and labels. Must match kMenu in RelinkDeckTuner.cpp.
+PCT_LABELS = [(f"TXT_RDT_PCT_{p}", f"{p}%") for p in (100, 95, 90, 85, 80, 75, 70)]
+LEVEL_LABELS = [("TXT_RDT_LVL_NORMAL", "Normal"), ("TXT_RDT_LVL_REDUCED", "Reduced"), ("TXT_RDT_LVL_MINIMUM", "Minimum")]
+MENU_OPTIONS = [  # (key of the reused hidden option, name, description, labels, default label index)
+    (0x2f6f51d1, ("TXT_RDT_OPT_BASE_SCALE", "Resolution Scale"),
+     ("TXT_RDT_OPT_BASE_SCALE_INFO", "3D render scale outside dialogues.\nLower values raise the frame rate.\n(Relink Deck Tuner)"),
+     PCT_LABELS, 0),
+    (0xfbce1e5b, ("TXT_RDT_OPT_DLG_SCALE", "Dialogue Resolution"),
+     ("TXT_RDT_OPT_DLG_SCALE_INFO", "3D render scale during dialogues\nand cutscenes.\n(Relink Deck Tuner)"),
+     PCT_LABELS, 4),
+    (0x4c1d6fce, ("TXT_RDT_OPT_UPSCALER", "Upscaler"),
+     ("TXT_RDT_OPT_UPSCALER_INFO",
+      "Filter that enlarges the reduced\n3D image. Takes effect after\nrestarting the game.\n(Relink Deck Tuner)"),
+     [("TXT_RDT_UPS_FSR", "FSR 1.0"), ("TXT_RDT_UPS_BICUBIC", "Bicubic")], 0),
+    (0x4c37cdf9, ("TXT_RDT_OPT_DLG_VEG", "Dialogue Vegetation"),
+     ("TXT_RDT_OPT_DLG_VEG_INFO",
+      "Vegetation detail during dialogues.\nReduced looks almost the same\nand is much faster.\n(Relink Deck Tuner)"),
+     LEVEL_LABELS, 1),
+    (0xffd48260, ("TXT_RDT_OPT_DLG_LOD", "Dialogue Scenery Detail"),
+     ("TXT_RDT_OPT_DLG_LOD_INFO", "Detail of buildings and props\nduring dialogues.\n(Relink Deck Tuner)"),
+     LEVEL_LABELS, 0),
+]
+SUBMENU_ROW = 44
+SUBMENU_LABELS = 10
+
+
+def menu_texts():
+    texts = {}
+    for _, name, info, labels, _ in MENU_OPTIONS:
+        texts.update([name, info] + labels)
+    return texts
+
+
+def append_text_rows(buf, texts):
+    """Append {id: text} rows to a text_*.msg ({rows_: [{column_: {...}}]}), keeping every existing byte."""
+    root, _ = ms.parse(buf)
+    rows = root.get("rows_")
+    if rows is None or rows.kind != "array" or buf[rows.start] not in (0xDC, 0xDD):
+        raise SystemExit("text table layout changed")
+    n = len(rows.items) + len(texts)
+    head, hlen = (b"\xdc" + struct.pack(">H", n), 3) if buf[rows.start] == 0xDC else (b"\xdd" + struct.pack(">I", n), 5)
+    new = b"".join(msgpack.packb({"column_": {"id_hash_": i, "subid_hash_": "", "text_": t}}) for i, t in texts.items())
+    out = buf[:rows.start] + head + buf[rows.start + hlen:rows.end] + new + buf[rows.end:]
+    a = msgpack.unpackb(buf, raw=False)["rows_"]
+    b = msgpack.unpackb(out, raw=False)["rows_"]
+    if b[:len(a)] != a or [r["column_"]["id_hash_"] for r in b[len(a):]] != list(texts):
+        raise AssertionError("text rows not appended cleanly")
+    return out
+
+
+def build_menu(arc, mod):
+    item_path, menu_path = "system/table/option_item.tbl", "system/table/option_menu.tbl"
+    sub_path = "system/table/option_submenu.tbl"
+    texts = menu_texts()
+
+    en = msgpack.unpackb(arc.read("system/table/text/en/text_ui.msg"), raw=False)["rows_"]
+    taken = {hash32(r["column_"]["id_hash_"]) for r in en}
+    for tid in texts:
+        if tid in {r["column_"]["id_hash_"] for r in en} or hash32(tid) in taken:
+            raise SystemExit(f"{tid} collides with an existing text id")
+
+    items = bytearray(arc.read(item_path))
+    n = struct.unpack_from("<Q", items, 0)[0]
+    if 8 + n * ITEM_ROW != len(items):
+        raise SystemExit(f"{item_path}: unexpected layout; game version changed?")
+    key_row = {struct.unpack_from("<I", items, 8 + r * ITEM_ROW)[0]: r for r in range(n)}
+    # Player Silhouette: a PC-visible drop-down row that can also be changed in the pause menu
+    # (Textures-like rows are title-screen only).
+    template = key_row[0x485fcc79]
+    t_flags = 8 + template * ITEM_ROW + 36
+    for key, name, info, labels, default in MENU_OPTIONS:
+        r = key_row[key]
+        off = 8 + r * ITEM_ROW
+        struct.pack_into("<2I", items, off + 4, hash32(name[0]), hash32(info[0]))  # Name, Description
+        struct.pack_into("<I", items, off + 16, 0)                                # Min
+        struct.pack_into("<I", items, off + 24, default)                          # Default
+        items[off + 37:off + 52] = items[t_flags + 1:t_flags + 16]  # flag 0 is per-row
+        mod.changes.append(f"{item_path}: row {r} key {key:08x} -> {name[1]} (default {labels[default][1]}, visible on PC)")
+    mod.write(item_path, bytes(items))
+
+    sub = bytearray(arc.read(sub_path))
+    m = struct.unpack_from("<Q", sub, 0)[0]
+    if 8 + m * SUBMENU_ROW != len(sub):
+        raise SystemExit(f"{sub_path}: unexpected layout; game version changed?")
+    sub_row = {struct.unpack_from("<I", sub, 8 + r * SUBMENU_ROW + 40)[0]: r for r in range(m)}
+    for key, name, _, labels, _ in MENU_OPTIONS:
+        r = sub_row[key]  # KeyError = not a drop-down row
+        hashes = [hash32(i) for i, _ in labels] + [EMPTY_HASH] * (SUBMENU_LABELS - len(labels))
+        struct.pack_into(f"<{SUBMENU_LABELS}I", sub, 8 + r * SUBMENU_ROW, *hashes)
+        mod.changes.append(f"{sub_path}: row {r} labels -> " + " / ".join(t for _, t in labels))
+    mod.write(sub_path, bytes(sub))
+
+    menu = bytearray(arc.read(menu_path))
+    m = struct.unpack_from("<Q", menu, 0)[0]
+    if 8 + m * MENU_ROW != len(menu):
+        raise SystemExit(f"{menu_path}: unexpected layout; game version changed?")
+    anchor = 0x9a9f05f8  # Rendering: marks the Graphics page
+    keys = [k for k, *_ in MENU_OPTIONS]
+    pages = 0
+    for r in range(m):
+        off = 8 + r * MENU_ROW
+        slots = list(struct.unpack_from(f"<{MENU_ITEMS}I", menu, off))
+        if anchor not in slots:
+            continue
+        used = [s for s in slots if s != EMPTY_HASH and s not in keys] + keys  # our rows at the end
+        if len(used) > MENU_ITEMS:
+            raise SystemExit("graphics menu has no free slots")
+        struct.pack_into(f"<{MENU_ITEMS}I", menu, off, *(used + [EMPTY_HASH] * (MENU_ITEMS - len(used))))
+        mod.changes.append(f"{menu_path}: row {r} appended {len(keys)} Deck Tuner options")
+        pages += 1
+    if pages != 1:
+        raise SystemExit(f"expected 1 graphics page, found {pages}")
+    mod.write(menu_path, bytes(menu))
+
+    for region in TEXT_REGIONS:
+        path = f"system/table/text/{region}/text_ui.msg"
+        mod.write(path, append_text_rows(arc.read(path), texts))
+        mod.changes.append(f"{path}: added {len(texts)} text rows (English)")
+
+
 # ---------- A2: dialogue lights ----------
 
 def build_dialogue(arc, mod, paths):
@@ -280,9 +405,16 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--npc-density", type=float, default=1.0, help="0.5 = half density (A5, experimental)")
     ap.add_argument("--fog-shadow-mask", type=int, default=511, help="value for the town quality-flag masks (A3)")
+    ap.add_argument("--menu-only", action="store_true", help="only build the Deck Tuner menu mod (A6)")
     args = ap.parse_args()
 
     arc = Archive(args.game_dir)
+    menu = ModWriter(args.out_dir, "relinkdecktuner.menu", "Relink Deck Tuner - Menu Options",
+                     "Adds the Relink Deck Tuner settings to the Graphics options (needs RelinkDeckTuner.asi 0.13+).")
+    build_menu(arc, menu)
+    menu.finish()
+    if args.menu_only:
+        return
     paths = [l.split("\t")[0] for l in open(os.path.join(args.game_dir, "src/dumps/resolved.tsv"), encoding="utf-8")]
 
     opts = ModWriter(args.out_dir, "relinkdecktuner.options", "Relink Deck Tuner - Hidden Graphics Options",
