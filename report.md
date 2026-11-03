@@ -406,6 +406,29 @@ Tras reiniciar la Deck, la misma prueba (`foliage_lod1` + 3D a 0.9) da **27 FPS*
 
 Con `Scale = 0.85` (1088x612): **30 FPS**, 33,7 ms (33,3‑34,1), GPU 99 % / 1441 MHz / 10,4 W. Llega a 30, pero justo. El usuario lo ve "en el límite de aceptable": **el reescalado del juego produce bandas horizontales**. Parece un muestreo de punto o sin filtrar al estirar 612 → 720 líneas (factor 1,18, no entero). Mejorar ese filtro (lineal o FSR1) atacaría la causa del mal aspecto; hay que localizar el pase de reescalado en una captura con la escala activa.
 
+### 7.12 Reescalado: el "TUP" del juego produce las bandas; sustituido por FSR1 [VERIFICADO en PC]
+
+**Diagnóstico** (captura automática con el 3D a 0.85, `auto_frame2435`):
+- Con la escala activa, todo el G‑buffer y la iluminación se dibujan a 1088x612. Un único pase, **EID 5219** (pixel shader DXBC `0e4625da…`, ~215 instrucciones), pasa la imagen a 1280x720 antes de dibujar la UI.
+- Ese shader es el **temporal upsampler** del motor (`ParamBuffer`: `orgScreen` = tamaño de origen, `isOddFrame_`, `isStopTUP_`). Reconstruye columnas/filas alternas entre fotogramas pares e impares. En la captura, `isStopTUP_ = 0` (activo).
+- **No usa sampler**: todas las lecturas son `ld` (texel exacto, sin filtrar) con coordenadas `ftoi(uv * orgScreen)`. Con factores no enteros (612 → 720 = 1,18) repite filas: son las **bandas horizontales** que veía el usuario. Con `isStopTUP_ = 1` hace un `ld` directo (vecino más cercano, mismo problema).
+- Medido: la salida real del TUP difiere de un nearest‑neighbour en solo 1,1‑1,3/255 de media. En la práctica no reconstruye nada útil en estas escenas.
+
+**Solución (RelinkDeckTuner 0.5, `Upscaler` en el `.ini`):**
+- El `.asi` engancha `D3D11CreateDevice` en la tabla de importaciones del juego (sin parchear código).
+- Del dispositivo, engancha `ID3D11Device::CreatePixelShader` (vtable, índice 15).
+- Cuando el juego crea **exactamente** ese shader (checksum DXBC), crea en su lugar uno propio con las mismas ligaduras (`t3`, `cb1.orgScreen`, firma `SV_Position` + `TEXCOORD0`). Cualquier otro shader pasa sin tocar.
+  - `Upscaler = 1`: **AMD FidelityFX FSR 1.0 EASU** (`asi/third_party/fsr1`, licencia MIT). El `Gather4` se emula con `Load`, así que no necesita sampler. Se lee cada 2x2 una vez (las llamadas R/G/B reutilizan los texels).
+  - `Upscaler = 2`: bicúbico Catmull‑Rom (16 `Load`). A escala 1:1 devuelve exactamente la entrada (verificado: diferencia 0).
+  - `Upscaler = 0`: el TUP original.
+- A resolución nativa ese pase no se ejecuta, así que la sustitución no cambia nada fuera de la escala.
+
+**Validación:**
+- Arnés D3D11 propio (`asi/test/upscale_test.cpp`) que ejecuta cada `.cso` como el juego, sobre la textura de entrada real extraída de la captura.
+- Comparativas ×3 en `notes/upscaler/`: con TUP y nearest se ven dientes de sierra en mandíbula y pelo; el bicúbico es suave; **FSR1 da bordes limpios y nítidos**.
+- Coste en la GPU del PC (Radeon integrada), 1088x612 → 1280x720: nearest 0,07 ms, bicúbico 0,45 ms, **FSR1 0,85 ms**. El TUP original costaba 2,16 ms en la captura (contador de RenderDoc).
+- En el juego (PC): el log muestra `temporal upsampler shader replaced by FSR1 EASU: hr=0x00000000`, y los diálogos de Lyria se ven sin bandas con 0.85.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
