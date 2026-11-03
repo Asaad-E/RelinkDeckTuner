@@ -400,6 +400,8 @@ En el diálogo del Verbose Man, la vegetación era el **49 %** del fotograma. Aq
 
 **Prueba combinada en Lyria** (`foliage_lod1` en 606 modelos + 3D a 0.9 en diálogo, aplicado según el log): **21 FPS**, 48,1 ms, GPU 94 % a **1600 MHz pero solo 5,4 W**, 67 °C, CPU 2,4 GHz, justo después de despertar la Deck. Peor que los 24 FPS con `foliage_lod2` sin escala. Ese consumo tan bajo a reloj máximo no encaja con las sesiones anteriores (~10 W a 1,4 GHz). Las mediciones entre sesiones no son comparables. Hace falta un A/B en la misma sesión, cambiando solo una cosa.
 
+Con `foliage_lod1`, **los árboles sí se mueven con el viento** (confirmado por el usuario). LOD1 conserva la animación; LOD2 no.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
