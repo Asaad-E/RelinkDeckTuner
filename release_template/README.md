@@ -1,70 +1,88 @@
-# Relink Deck Tuner v0.11
+# Relink Deck Tuner {VERSION}
 
-Paquete de rendimiento para **Granblue Fantasy: Relink v2.0.5** en Steam Deck (ajustes gráficos en Standard, 1280x720). Objetivo: 30 FPS estables en diálogos y pueblos, con la imagen casi igual que la original.
+Performance package for **Granblue Fantasy: Relink v2.0.5** on Steam Deck (graphics preset Standard, 1280x720). Goal: a steady 30 FPS in dialogues and towns, with the image almost identical to the original.
 
-> **Solo para la v2.0.5 y uso personal.** `juego/` contiene archivos del juego modificados (`data.i` y `data/…`). Si el juego se actualiza, el `data.i` deja de valer; los `.asi` comprueban la versión y se desactivan solos, así que el juego no se rompe.
+> **v2.0.5 only, personal use.** `game/` contains modified game files (`data.i` and `data/…`). If the game updates, this `data.i` no longer matches; both `.asi` plugins check the game version and switch themselves off, so the game will not break.
 
-## Contenido
+## Contents
 
-| Ruta | Qué es |
+| Path | What it is |
 |---|---|
-| `juego/data.i`, `juego/data/model/…` | Vegetación (606 modelos) en su segundo nivel de detalle también de cerca. Las hojas conservan el viento. |
-| `juego/data/layout/timeline/…` | Luces de cinemáticas sin sombra dinámica. |
-| `juego/data/filter/pc00|pd00/…` | Folca y Seedhollow: sombra simple y niebla reducida; sin luz volumétrica en la iglesia. |
-| `juego/data/system/NPC/…` | Densidad de NPCs al 80 % en Folca y Seedhollow. |
-| `juego/scripts/RelinkDeckTuner.asi` + `.ini` | En diálogos baja solo el 3D (la interfaz sigue nítida) y lo reescala con **AMD FSR 1.0**. Atajos F9/F10. Registra FPS y tirones. |
-| `juego/winmm.dll` + `juego/scripts/GBFRelinkFix.*` | GBFRelinkFix 1.1.5 de Lyall (cargador ASI, sin logos, sombras 128, LOD lejano 0.8). |
-| `instalar.sh` / `desinstalar.sh` | Instalación con copia de seguridad y comprobación SHA‑256; vuelta al juego de fábrica. |
-| `SHA256SUMS.txt` | Sumas de todos los archivos de `juego/`. |
-| `GUIA.md` | Guía completa (opciones, medición, cómo se regenera). |
-| `licencias/` | MIT de GBFRelinkFix y de AMD FidelityFX FSR 1.0. |
+| `game/data.i`, `game/data/model/…` | Vegetation (606 models) uses its second level of detail even up close. The leaves keep their wind animation. |
+| `game/data/layout/timeline/…` | Cutscene lights without per-frame dynamic shadows. |
+| `game/data/filter/pc00|pd00/…` | Folca and Seedhollow: simple shadows and reduced fog; no volumetric light in the church. |
+| `game/data/system/NPC/…` | NPC density at 80 % in Folca and Seedhollow. |
+| `game/scripts/RelinkDeckTuner.asi` + `.ini` | Lowers only the 3D resolution during dialogues (UI and text stay sharp) and upscales it with **AMD FSR 1.0**. F9/F10 hotkeys. Logs FPS and stutter. |
+| `game/winmm.dll` + `game/scripts/GBFRelinkFix.*` | GBFRelinkFix 1.1.5 by Lyall (ASI loader, intro skip, shadows 128, distant LOD 0.8). |
+| `install.sh` / `uninstall.sh` | Steam Deck / Linux: install with backup and SHA-256 check; restore the factory game. |
+| `install.bat` / `uninstall.bat` | The same for Windows. |
+| `SHA256SUMS.txt` | Checksums of every file in `game/`. |
+| `licenses/` | MIT licenses of GBFRelinkFix and AMD FidelityFX FSR 1.0. |
 
-## Instalar en la Steam Deck
+## Install
 
-1. Copia esta carpeta a la Deck.
-2. En el modo escritorio, abre Konsole y ejecuta (con el juego cerrado):
-   ```
-   bash instalar.sh "/home/deck/Documents/nogames/Granblue Fantasy Relink"
-   ```
-   (cambia la ruta por la de tu juego).
-3. **Solo la primera vez:** Proton tiene que cargar el `winmm.dll` del juego. En Steam, en las propiedades del juego, pon como opción de lanzamiento:
-   ```
-   WINEDLLOVERRIDES="winmm=n,b" %command%
-   ```
-4. Al abrir el juego no deben salir los logos del inicio. `scripts/RelinkDeckTuner.log` debe contener `temporal upsampler shader replaced by FSR1 EASU`.
+Close the game first. The installer keeps a copy of everything it replaces in `<game>/relinkdecktuner_backup_<date>/`, saves the factory `data.i` as `data.i.orig`, copies `game/` and verifies every file.
 
-En Windows es igual: copia el contenido de `juego/` en la carpeta del juego, sin pasos de Proton.
-
-## Ajustes (`scripts/RelinkDeckTuner.ini`)
-
-| Clave | Valor | Qué hace |
-|---|---|---|
-| `Mode` | `1` | `Scale` en diálogos, `BaseScale` fuera de ellos. 0 = desactivado. |
-| `Scale` | `0.8` | Escala del 3D en diálogos. |
-| `BaseScale` | `1.0` | Escala del 3D fuera de los diálogos. |
-| `Upscaler` | `1` | 1 = FSR1, 2 = bicúbico, 0 = el del juego (con bandas). |
-| `HotkeyBaseScale` / `HotkeyDialogueScale` | `120` (F9) / `121` (F10) | Cada pulsación pasa a la siguiente escala (1.0 → 0.95 → 0.9 → 0.85 → 0.8 → 0.75) y la guarda. En la Deck, asígnalas a botones traseros desde la configuración de mando de Steam. |
-
-Los ajustes de GBFRelinkFix están en `scripts/GBFRelinkFix.ini`.
-
-## Desinstalar
-
+**Steam Deck (desktop mode, Konsole):**
 ```
-bash desinstalar.sh "/home/deck/Documents/nogames/Granblue Fantasy Relink"
+bash install.sh "/home/deck/path/to/Granblue Fantasy Relink"
+```
+First time only: Proton must load the game's own `winmm.dll`. In Steam, open the game's Properties and set the launch options to:
+```
+WINEDLLOVERRIDES="winmm=n,b" %command%
 ```
 
-Restaura el `data.i` de fábrica (lo guardó `instalar.sh` como `data.i.orig`) y quita los archivos del mod.
+**Windows:** double-click `install.bat` and enter the game folder when asked, or run:
+```
+install.bat "C:\Games\Granblue Fantasy Relink"
+```
 
-## Resultados medidos
+Check: the company logos are skipped at startup, and `scripts/RelinkDeckTuner.log` contains `temporal upsampler shader replaced by FSR1 EASU`.
 
-| | Juego de fábrica | Con el paquete |
+## Settings (`scripts/RelinkDeckTuner.ini`)
+
+The file is re-read every second, so it can be edited while playing. Only `Upscaler` is read once at startup.
+
+| Key | Value | Meaning |
 |---|---|---|
-| Diálogos con vegetación detrás, Deck | 22‑27 FPS | 30 FPS |
-| Diálogo del Verbose Man (Seedhollow), PC de pruebas | 25 FPS | 38 FPS |
-| Pueblos, Deck | Zinkenstill: 30 con frametime de 28‑38 ms | Seedhollow: 30 estables (33,5 ms; casi sin fotogramas > 40 ms) |
+| `Mode` | `1` | 1 = `Scale` during dialogues and `BaseScale` elsewhere; 2 = `Scale` always; 0 = off (logging only). |
+| `Scale` | `0.8` | 3D resolution scale per axis during dialogues (0.8 = 1024x576 upscaled to 1280x720). |
+| `BaseScale` | `1.0` | 3D resolution scale outside dialogues (1.0 = native). |
+| `HotkeyBaseScale` / `HotkeyDialogueScale` | `120` (F9) / `121` (F10) | Each press moves to the next step (1.0 → 0.95 → 0.9 → 0.85 → 0.8 → 0.75 → 1.0) and saves it to the `.ini`. On the Deck, map them to back buttons in Steam's controller settings. |
+| `Fields` | `1` | 1 = scale the 3D scene only (sharp UI). 3 scales the UI too (blurry); not recommended. |
+| `Upscaler` | `1` | 1 = FSR 1.0; 2 = bicubic (softer); 0 = the game's own upsampler (horizontal bands). |
+| `DialogueLodBias` | `1.0` | Scenery LOD factor during dialogues. 0.5 gains a few FPS but distant objects get visibly simpler. |
+| `ExitDelayMs` | `700` | How long without cutscene-camera updates before a dialogue is considered over. |
+| `LogPeriodMs` | `2000` | Interval of the status line in `RelinkDeckTuner.log`. |
 
-## Créditos
+GBFRelinkFix settings are in `scripts/GBFRelinkFix.ini`.
 
-- GBFRelinkFix: Lyall (codeberg.org/Lyall/GBFRelinkFix), licencia MIT.
-- FSR 1.0: AMD FidelityFX, licencia MIT.
-- Formatos de datos: GBFRDataTools de Nenkai (esquemas FlatBuffers).
+## Log
+
+`scripts/RelinkDeckTuner.log` writes a line every `LogPeriodMs` with:
+- `fps`: whole game;
+- `maxFrameMs`: longest frame in the interval;
+- `slow40`: frames longer than 40 ms (visible stutter at 30 FPS);
+- `dialogueFps`, `dialogue`: dialogue state;
+- the 3D render size in use.
+
+## Uninstall
+
+```
+bash uninstall.sh "/home/deck/path/to/Granblue Fantasy Relink"
+```
+or `uninstall.bat` on Windows. Both restore `data.i.orig` and remove the mod files. `data/sound` and `data/ui` belong to the game and are kept.
+
+## Measured results
+
+| | Factory game | With this package |
+|---|---|---|
+| Dialogues with vegetation behind, Deck | 22-27 FPS | 30 FPS |
+| Verbose Man dialogue (Seedhollow), test PC | 25 FPS | 38 FPS |
+| Towns, Deck | Zinkenstill: 30 with 28-38 ms frame times | Seedhollow: steady 30 (33.5 ms; almost no frames over 40 ms) |
+
+## Credits
+
+- GBFRelinkFix: Lyall (codeberg.org/Lyall/GBFRelinkFix), MIT license.
+- FSR 1.0: AMD FidelityFX, MIT license.
+- Data formats: Nenkai's GBFRDataTools (FlatBuffers schemas).
