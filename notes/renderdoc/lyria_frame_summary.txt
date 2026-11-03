@@ -1,0 +1,49 @@
+events 1771, GPU total 140.32 ms
+
+== by marker ==
+ 140.316 ms  (none)
+
+== by render targets (color | depth) ==
+ 102.226 ms    608 ev  2D Render Target 4316[1280x720 R8G8B8A8_TYPELESS];2D Render Target 4457[1280x720 R8G8B8A8_TYPELESS];2D Render Target 4322[1280x720 R10G10B10A2_TYPELESS];2D Render Target 4325[1280x720 R16G16_TYPELESS] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+  12.202 ms    504 ev  - | 2D Depth Target 4533[2048x2048 R16_TYPELESS]
+   6.119 ms    415 ev  - | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   3.769 ms      5 ev  2D Render Target 4312[1280x720 R11G11B10_FLOAT] | -
+   3.761 ms     45 ev  2D Render Target 4312[1280x720 R11G11B10_FLOAT] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   2.261 ms      1 ev  2D Render Target 4348[1280x720 R16_TYPELESS] | -
+   2.162 ms     38 ev  2D Render Target 4312[1280x720 R11G11B10_FLOAT];2D Render Target 4325[1280x720 R16G16_TYPELESS] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   1.402 ms     22 ev  - | -
+   0.613 ms      1 ev  2D Render Target 59390[1280x720 R11G11B10_FLOAT];2D Render Target 4448[1280x720 R8G8B8A8_TYPELESS] | -
+   0.570 ms      7 ev  2D Render Target 4316[1280x720 R8G8B8A8_TYPELESS] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   0.485 ms      1 ev  2D Render Target 4454[1920x1080 R8G8B8A8_TYPELESS] | -
+   0.438 ms      3 ev  Swapchain Image 4271[1280x720 R8G8B8A8_UNORM] | -
+   0.409 ms      2 ev  2D Render Target 59390[1280x720 R11G11B10_FLOAT] | -
+   0.379 ms      6 ev  2D Render Target 93893[1280x720 R11G11B10_FLOAT] | -
+   0.352 ms      1 ev  2D Render Target 59516[1280x720 R11G11B10_FLOAT] | -
+   0.326 ms     19 ev  2D Render Target 4448[1280x720 R8G8B8A8_TYPELESS] | -
+   0.302 ms      2 ev  2D Render Target 4451[1920x1080 R8G8B8A8_TYPELESS] | -
+   0.280 ms      1 ev  2D Render Target 95152[640x360 R16G16B16A16_TYPELESS];2D Render Target 95148[640x360 R16G16B16A16_TYPELESS] | -
+   0.225 ms      1 ev  2D Render Target 95156[640x360 R16G16B16A16_TYPELESS] | -
+   0.211 ms     17 ev  2D Render Target 59390[1280x720 R11G11B10_FLOAT];2D Render Target 93897[1280x720 A8_UNORM] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   0.178 ms      6 ev  2D Render Target 93995[640x360 R11G11B10_FLOAT] | -
+   0.174 ms     36 ev  2D Render Target 59390[1280x720 R11G11B10_FLOAT] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   0.166 ms      3 ev  2D Render Target 4348[1280x720 R16_TYPELESS] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   0.161 ms      1 ev  2D Render Target 93928[640x360 R11G11B10_FLOAT] | -
+   0.144 ms      1 ev  2D Render Target 95152[640x360 R16G16B16A16_TYPELESS] | -
+   0.140 ms      1 ev  2D Render Target 4319[1280x720 R8G8B8A8_TYPELESS] | -
+   0.137 ms      3 ev  2D Render Target 83[1x1 R32_TYPELESS] | -
+   0.124 ms      1 ev  2D Render Target 4339[1280x720 R32_TYPELESS] | -
+   0.122 ms      1 ev  2D Render Target 93956[1280x720 R11G11B10_FLOAT] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   0.111 ms      1 ev  2D Render Target 93948[1280x720 R8G8_TYPELESS] | -
+   0.088 ms      1 ev  2D Render Target 93900[640x360 R11G11B10_FLOAT] | -
+   0.071 ms      3 ev  2D Render Target 93940[640x360 R16G16_TYPELESS] | -
+   0.055 ms      1 ev  2D Render Target 93936[640x360 R11G11B10_FLOAT] | -
+   0.026 ms      2 ev  2D Render Target 93912[160x90 R11G11B10_FLOAT] | -
+   0.025 ms      1 ev  2D Render Target 93908[320x180 R11G11B10_FLOAT] | -
+   0.025 ms      1 ev  2D Render Target 4384[128x72 R11G11B10_FLOAT] | -
+   0.022 ms      2 ev  2D Render Target 93920[40x22 R11G11B10_FLOAT] | -
+   0.015 ms      2 ev  2D Render Target 93916[80x45 R11G11B10_FLOAT] | -
+   0.011 ms      1 ev  2D Render Target 93944[160x90 R16G16_TYPELESS] | -
+   0.009 ms      1 ev  2D Render Target 4312[1280x720 R11G11B10_FLOAT];2D Render Target 4316[1280x720 R8G8B8A8_TYPELESS];2D Render Target 4325[1280x720 R16G16_TYPELESS] | 2D Depth Target 50692[1280x720 D32S8_TYPELESS]
+   0.008 ms      1 ev  2D Render Target 4392[128x72 R32_TYPELESS] | -
+   0.006 ms      1 ev  2D Render Target 93932[40x22 R11G11B10_FLOAT] | -
+   0.005 ms      1 ev  2D Render Target 93924[80x45 R11G11B10_FLOAT] | -

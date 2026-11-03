@@ -382,6 +382,22 @@ Primera prueba (`--level 2`): 243 modelos de vegetación usan como mucho el LOD2
 - El usuario ve los árboles **"muy quietos"**: los LOD bajos no tienen la animación de viento. LOD2 es demasiado agresivo.
 - Se vuelve a la vegetación original (`dialogue` + `towns`) para que el usuario compare el aspecto.
 
+### 7.11 Perfilado del diálogo de Lyria (slot 1, Zinkenstill) [MEDIDO en PC]
+
+Captura `gbfr_frame5082`, con vegetación original. Fotograma de 140 ms en el PC (1.771 eventos).
+
+| Pixel shader | Tiempo | % | Draws | Qué es |
+|---|---|---|---|---|
+| vegetación (alpha test, 341 líneas) | 40,7 ms | 26,8 % | 67 | árboles: `bg012c` (9.366 idx × 9 = 12,5 ms) y otros de 8.070 y 5.334 índices |
+| opaco estático (475 líneas, sin discard) | 26,5 ms | 17,4 % | 208 | escenario general |
+| opaco estático (543 líneas) | 15,8 ms | 10,4 % | 110 | escenario general |
+| alpha test (515 líneas) | 7,8 ms | 5,1 % | 40 | |
+| resto | ~61 ms | ~40 % | | sombras (12 ms), prepaso, iluminación, post |
+
+En el diálogo del Verbose Man, la vegetación era el **49 %** del fotograma. Aquí es el **27 %**: Lyria tiene mucho escenario opaco (casas, heno, suelo) con shaders largos. El coste de lo opaco es "píxeles × shader" (sin discard, el early‑Z funciona), así que ahí solo ayuda reducir píxeles (escala de resolución). Por eso `foliage_lod2` dejó Lyria en 24 FPS.
+
+**Sobre el LOD de GBFRelinkFix:** su multiplicador escala las **distancias** de cambio de LOD, para que los objetos lejanos cambien antes o después. Un árbol a pocos metros ocupa media pantalla y sigue en LOD0 con cualquier multiplicador razonable (0.4 no cambió nada, §7.8). `build_foliage.py` cambia los umbrales de cada modelo de vegetación, así que afecta también a los objetos cercanos.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas

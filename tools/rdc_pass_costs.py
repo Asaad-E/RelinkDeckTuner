@@ -6,6 +6,7 @@ Usage:
 Writes one TSV row per draw/dispatch/clear/copy: event id, GPU microseconds, marker path,
 action name, index/instance counts, colour targets and depth target (name WxH format).
 Also writes <out>.summary.txt: totals per marker and per colour-target set, largest first.
+With RDC_PS=1 also records each event's pixel shader and totals per pixel shader (slower).
 """
 import os
 import sys
@@ -39,6 +40,7 @@ def main():
         dur[r.eventId] = r.value.d * 1e6  # seconds -> microseconds
 
     rows = []
+    want_ps = os.environ.get("RDC_PS") == "1"
 
     def walk(actions, path):
         for a in actions:
@@ -47,9 +49,13 @@ def main():
                 walk(a.children, path + [name])
                 continue
             us = dur.get(a.eventId, 0.0)
+            ps = ""
+            if want_ps and us > 0:
+                ctl.SetFrameEvent(a.eventId, False)
+                ps = str(ctl.GetPipelineState().GetShader(rd.ShaderStage.Pixel))
             outs = ";".join(target(o) for o in a.outputs if o != rd.ResourceId.Null())
             rows.append((a.eventId, us, "/".join(path), name, a.numIndices, a.numInstances, outs,
-                         target(a.depthOut)))
+                         target(a.depthOut), ps))
 
     walk(ctl.GetRootActions(), [])
     with open(out, "w", encoding="utf-8") as f:
@@ -64,6 +70,10 @@ def main():
         key = (r[6] or "-") + " | " + (r[7] or "-")
         c, n = by_target.get(key, (0.0, 0))
         by_target[key] = (c + r[1], n + 1)
+    by_ps = {}
+    for r in rows:
+        c, n = by_ps.get(r[8], (0.0, 0))
+        by_ps[r[8]] = (c + r[1], n + 1)
     with open(out + ".summary.txt", "w", encoding="utf-8") as f:
         f.write("events %d, GPU total %.2f ms\n\n== by marker ==\n" % (len(rows), total / 1000))
         for k, v in sorted(by_marker.items(), key=lambda x: -x[1])[:60]:
