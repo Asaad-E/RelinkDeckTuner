@@ -18,6 +18,8 @@
 #include <cstdlib>
 #include <cstdio>
 #include <cstring>
+#include <initializer_list>
+#include <intrin.h>
 
 #include "upscale_shaders.h"
 
@@ -197,6 +199,77 @@ volatile LONG64* InstallCounterHook(uintptr_t site, const uint8_t* orig, size_t 
     return reinterpret_cast<volatile LONG64*>(tramp + 0x100);
 }
 
+// Frame statistics hook on the per-frame function: counts frames and, with RDTSC, keeps the longest
+// interval between two frames and how many intervals exceed a threshold (stutter). Data block at
+// tramp+0x100: frames, prevTsc, maxDelta, slowCount, slowThreshold (all u64).
+struct FrameStats { volatile LONG64 frames, prev, maxDelta, slow, threshold; };
+FrameStats* g_fs;
+
+FrameStats* InstallFrameStatsHook(uintptr_t site, const uint8_t* orig, size_t len) {
+    auto* tramp = static_cast<uint8_t*>(AllocNear(site, 0x1000));
+    if (!tramp || len < 5 || len > 16) return nullptr;
+    intptr_t dist = reinterpret_cast<intptr_t>(tramp) - static_cast<intptr_t>(site + 5);
+    if (dist < INT32_MIN + 0x1000 || dist > INT32_MAX - 0x1000) return nullptr;
+    auto* fs = reinterpret_cast<FrameStats*>(tramp + 0x100);
+    fs->threshold = INT64_MAX;  // set after TSC calibration
+    uint8_t* p = tramp;
+    auto bytes = [&](std::initializer_list<uint8_t> b) { for (uint8_t x : b) *p++ = x; };
+    auto rip = [&](const volatile void* target) {  // rel32 to target; the disp ends the instruction
+        int32_t d = static_cast<int32_t>(reinterpret_cast<const volatile uint8_t*>(target) - (p + 4));
+        memcpy(p, &d, 4); p += 4;
+    };
+    bytes({0x50, 0x52});                                // push rax; push rdx
+    bytes({0xf0, 0x48, 0xff, 0x05}); rip(&fs->frames);  // lock inc qword [frames]
+    bytes({0x0f, 0x31});                                // rdtsc
+    bytes({0x48, 0xc1, 0xe2, 0x20});                    // shl rdx, 32
+    bytes({0x48, 0x09, 0xd0});                          // or rax, rdx
+    bytes({0x48, 0x89, 0xc2});                          // mov rdx, rax
+    bytes({0x48, 0x87, 0x15}); rip(&fs->prev);          // xchg rdx, [prev]
+    bytes({0x48, 0x85, 0xd2});                          // test rdx, rdx
+    uint8_t* jzDone = p; bytes({0x74, 0x00});           // jz done
+    bytes({0x48, 0x29, 0xd0});                          // sub rax, rdx      (delta)
+    bytes({0x48, 0x3b, 0x05}); rip(&fs->maxDelta);      // cmp rax, [maxDelta]
+    uint8_t* jbeNoMax = p; bytes({0x76, 0x00});         // jbe nomax
+    bytes({0x48, 0x89, 0x05}); rip(&fs->maxDelta);      // mov [maxDelta], rax
+    jbeNoMax[1] = static_cast<uint8_t>(p - (jbeNoMax + 2));
+    bytes({0x48, 0x3b, 0x05}); rip(&fs->threshold);     // cmp rax, [threshold]
+    uint8_t* jbeDone = p; bytes({0x76, 0x00});          // jbe done
+    bytes({0xf0, 0x48, 0xff, 0x05}); rip(&fs->slow);    // lock inc qword [slow]
+    jzDone[1] = static_cast<uint8_t>(p - (jzDone + 2));
+    jbeDone[1] = static_cast<uint8_t>(p - (jbeDone + 2));
+    bytes({0x5a, 0x58});                                // pop rdx; pop rax
+    memcpy(p, orig, len); p += len;                     // original code
+    bytes({0xff, 0x25, 0, 0, 0, 0});                    // jmp [rip+0]
+    uintptr_t resume = site + len;
+    memcpy(p, &resume, 8);
+    FlushInstructionCache(GetCurrentProcess(), tramp, 0x1000);
+
+    uint8_t patch[16];
+    memset(patch, 0x90, sizeof(patch));
+    patch[0] = 0xe9;
+    int32_t rel = static_cast<int32_t>(dist);
+    memcpy(patch + 1, &rel, 4);
+    DWORD old;
+    VirtualProtect(reinterpret_cast<void*>(site), len, PAGE_EXECUTE_READWRITE, &old);
+    memcpy(reinterpret_cast<void*>(site), patch, len);
+    VirtualProtect(reinterpret_cast<void*>(site), len, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), reinterpret_cast<void*>(site), len);
+    return fs;
+}
+
+// TSC ticks per millisecond, measured against QueryPerformanceCounter over ~200 ms.
+double CalibrateTscPerMs() {
+    LARGE_INTEGER f, q0, q1;
+    QueryPerformanceFrequency(&f);
+    QueryPerformanceCounter(&q0);
+    unsigned long long t0 = __rdtsc();
+    Sleep(200);
+    QueryPerformanceCounter(&q1);
+    unsigned long long t1 = __rdtsc();
+    double ms = (q1.QuadPart - q0.QuadPart) * 1000.0 / f.QuadPart;
+    return ms > 0 ? (t1 - t0) / ms : 0;
+}
+
 void ReadConfig(Config& c) {
     char buf[64];
     c.mode = GetPrivateProfileIntA("RelinkDeckTuner", "Mode", 1, g_iniPath);
@@ -241,6 +314,10 @@ int32_t* Row(uint32_t index) {
 }
 
 DWORD WINAPI Worker(LPVOID) {
+    double tscPerMs = CalibrateTscPerMs();
+    if (g_fs && tscPerMs > 0) InterlockedExchange64(&g_fs->threshold, static_cast<LONG64>(40.0 * tscPerMs));
+    Log("TSC %.0f ticks/ms; slow frame = longer than 40 ms", tscPerMs);
+    LONG64 lastSlow = 0;
     Config cfg;
     ReadConfig(cfg);
     FILETIME lastIni{};
@@ -314,10 +391,18 @@ DWORD WINAPI Worker(LPVOID) {
             double fps = lastLog ? (frames - logFrames) * 1000.0 / static_cast<double>(now - lastLog) : 0.0;
             logHits = hits;
             logFrames = frames;
+            double maxMs = 0;
+            LONG64 slow = 0;
+            if (g_fs && tscPerMs > 0) {
+                maxMs = InterlockedExchange64(&g_fs->maxDelta, 0) / tscPerMs;
+                slow = g_fs->slow - lastSlow;
+                lastSlow = g_fs->slow;
+            }
             lastLog = now;
             auto* g = reinterpret_cast<int32_t*>(g_base + kRenderSize);
-            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f dialogueFps=%.1f dialogue=%d applied=%d",
-                index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], fps, dlgFps, inDialogue, applied);
+            Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f maxFrameMs=%.1f slow40=%lld dialogueFps=%.1f dialogue=%d applied=%d",
+                index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], fps, maxMs, slow, dlgFps,
+                inDialogue, applied);
         }
     }
 }
@@ -331,7 +416,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.8 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.9 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
@@ -347,7 +432,8 @@ void Init(HMODULE self) {
         return;
     }
     Log("camera hook installed at +%zx", kCamHook);
-    g_frames = InstallCounterHook(g_base + kSizeCopy, kSizeCopyBytes, 6);  // push r15/r14/r13
+    g_fs = InstallFrameStatsHook(g_base + kSizeCopy, kSizeCopyBytes, 6);  // push r15/r14/r13
+    if (g_fs) g_frames = &g_fs->frames;
     if (BytesMatch(kLodFactorTable, reinterpret_cast<const uint8_t*>(kLodFactorDefault), sizeof(kLodFactorDefault))) {
         DWORD old;
         auto* t = reinterpret_cast<float*>(g_base + kLodFactorTable);
