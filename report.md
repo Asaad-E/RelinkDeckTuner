@@ -302,6 +302,9 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
   - Diálogo "Bon Vivant" (vegetación detrás): **30 FPS estables, 33,3 ms (31,5‑35,6)**, GPU 80 % / 956 MHz / 4,0 W. Antes, diálogos así iban a 26‑27 FPS con la GPU al 99 % y 10 W.
   - El usuario lo ve "más borroso pero manejable".
   - Como sobra mucha GPU, se sube a `Scale = 0.85` (1088x612) para el siguiente diálogo.
+  - **Problema: parpadeo negro** al cambiar de resolución, también cambiando solo el segundo par (`Fields = 2`). Causa: las globales de tamaño se usan para **crear** los render targets (p. ej. `0x1da6ce` copia el tamaño en un descriptor de textura, `0x26dac6` reserva buffers de `ancho×alto×3`). Cambiar el tamaño obliga a recrearlos y se pierde al menos un fotograma (y el historial de TAA). No es un fallo del mod: es inherente a cambiar el tamaño en caliente. Para evitarlo hay dos vías:
+    - cambiar solo cuando la pantalla ya está en negro (pantallas de carga entre zonas);
+    - un escalado por viewport dentro del motor, que es mucho más complejo.
 
 **Pendiente: pueblos/ciudad.** Con `LOD Multiplier = 0.75` (antes 0.6), el usuario nota **más tirones en el pueblo** y un **uso muy alto en la ciudad** (Seedhollow). Hay que reducir el coste ahí sin volver a 0.6 en todas partes. Opciones:
 - LOD por zona: 0.6 solo en pueblos.
