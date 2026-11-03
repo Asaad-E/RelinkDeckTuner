@@ -200,9 +200,9 @@ void Init(HMODULE self) {
     if (dot) *dot = 0;
     snprintf(g_iniPath, sizeof(g_iniPath), "%s.ini", path);
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
-    g_log = fopen(g_logPath, "w");
+    g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.1 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.2 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
