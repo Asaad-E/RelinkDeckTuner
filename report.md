@@ -367,6 +367,14 @@ Con `discard` + UAV, la GPU no puede descartar píxeles ocultos antes del shader
 
 Modelos candidatos por número de índices (por buscar a qué zona pertenecen; los layouts de `pd00` no los nombran como texto): 9366 → `bg012c`, `bg2084`, `bg6735`, `bga238`.
 
+### 7.10 Vegetación más ligera por umbrales de LOD [PENDIENTE de medir]
+
+El draw caro (9.366 índices) coincide con un trozo del LOD0 de **`bg012c`**, un árbol mediano con materiales `mediumtree_*` y `leaf_01`. Sus LODs tienen 14.580 / 10.230 / 5.430 / 2.952 índices. En `.minfo` (esquema `MInfo_ModelInfo.fbs` de GBFRDataTools), el campo `lod_screen_size_thresholds` decide qué LOD se usa según el tamaño en pantalla, y se lee al cargar la zona. `tools/minfo.py` lo lee.
+
+`tools/build_foliage.py` detecta como vegetación los modelos `bg`/`ba` cuyo `.mmat` nombra texturas de hojas, arbustos, hierba, etc. A esos modelos les sube a 1000 los umbrales de los LOD 0..N, para que no puedan elegirse de cerca. Solo cambian 4 bytes por umbral, y se comprueba. Se excluyen los modelos sin un LOD final alcanzable.
+
+Primera prueba (`--level 2`): 243 modelos de vegetación usan como mucho el LOD2 (≈37 % de los índices en `bg012c`). Es para medir la ganancia máxima; si funciona, se ajusta a LOD1. Instalado en la Deck junto a `dialogue` + `towns`, con la escala de resolución apagada.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
