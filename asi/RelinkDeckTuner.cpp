@@ -50,6 +50,8 @@ struct Config {
     int logPeriodMs = 2000; // periodic snapshot; 0 = only on changes
     double lodBias = 1.0;   // scenery LOD factor during dialogues (1.0 = unchanged)
     double baseScale = 1.0; // 3D scale outside dialogues in Mode 1 (1.0 = native)
+    int keyBase = 0x78;     // virtual key that cycles BaseScale (F9); 0 = disabled
+    int keyDialogue = 0x79; // virtual key that cycles Scale (F10); 0 = disabled
 };
 
 uintptr_t g_base;
@@ -286,6 +288,8 @@ void ReadConfig(Config& c) {
     c.baseScale = atof(buf);
     if (!(c.baseScale >= 0.4)) c.baseScale = 0.4;
     if (c.baseScale > 1.0) c.baseScale = 1.0;
+    c.keyBase = GetPrivateProfileIntA("RelinkDeckTuner", "HotkeyBaseScale", 0x78, g_iniPath);
+    c.keyDialogue = GetPrivateProfileIntA("RelinkDeckTuner", "HotkeyDialogueScale", 0x79, g_iniPath);
     GetPrivateProfileStringA("RelinkDeckTuner", "DialogueLodBias", "1.0", buf, sizeof(buf), g_iniPath);
     c.lodBias = atof(buf);
     if (!(c.lodBias >= 0.1)) c.lodBias = 0.1;
@@ -318,7 +322,33 @@ int32_t* Row(uint32_t index) {
     return reinterpret_cast<int32_t*>(g_base + kPresetTable + index * kRowSize);
 }
 
+// Hotkeys: each press moves a scale to the next step and saves it to the .ini (which the loop then
+// re-reads, so the .ini always shows the value in use).
+const double kScaleSteps[] = {1.0, 0.95, 0.9, 0.85, 0.8, 0.75};
+
+double NextStep(double cur) {
+    for (double s : kScaleSteps)
+        if (s < cur - 0.001) return s;
+    return kScaleSteps[0];
+}
+
+bool KeyPressed(int vk, bool& wasDown) {
+    if (!vk) return false;
+    bool down = (GetAsyncKeyState(vk) & 0x8000) != 0;
+    bool pressed = down && !wasDown;
+    wasDown = down;
+    return pressed;
+}
+
+void SaveScale(const char* key, double v) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.2f", v);
+    WritePrivateProfileStringA("RelinkDeckTuner", key, buf, g_iniPath);
+    Log("hotkey: %s -> %s", key, buf);
+}
+
 DWORD WINAPI Worker(LPVOID) {
+    bool baseKeyDown = false, dlgKeyDown = false;
     double tscPerMs = CalibrateTscPerMs();
     if (g_fs && tscPerMs > 0) InterlockedExchange64(&g_fs->threshold, static_cast<LONG64>(40.0 * tscPerMs));
     Log("TSC %.0f ticks/ms; slow frame = longer than 40 ms", tscPerMs);
@@ -347,6 +377,15 @@ DWORD WINAPI Worker(LPVOID) {
                 Log("config: Mode=%d Scale=%.2f BaseScale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f",
                     cfg.mode, cfg.scale, cfg.baseScale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias);
             }
+        }
+
+        if (KeyPressed(cfg.keyBase, baseKeyDown)) {
+            cfg.baseScale = NextStep(cfg.baseScale);
+            SaveScale("BaseScale", cfg.baseScale);
+        }
+        if (KeyPressed(cfg.keyDialogue, dlgKeyDown)) {
+            cfg.scale = NextStep(cfg.scale);
+            SaveScale("Scale", cfg.scale);
         }
 
         LONG64 hits = g_camHits ? *g_camHits : 0;
@@ -425,7 +464,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.10 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.11 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
