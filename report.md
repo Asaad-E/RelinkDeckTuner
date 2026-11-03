@@ -335,6 +335,8 @@ Con la escala de resolución sola no basta: algunas escenas siguen en 26 FPS inc
 | post | Bloom, MotionBlur, ColorShadow, DropShadow | 171 / 158 / 13 / 130 |
 | plant | PlantParameter (viento en vegetación) | 68 |
 
+Referencia previa: diálogo de Lyria ("No wonder you're a master swordswoman", Zinkenstill) con toda la imagen a 0.85 (`Fields = 3`): **26 FPS**, 37,9 ms, GPU 99 % / 1385 MHz / 10,2 W. La resolución sola no lo salva.
+
 Primera variante `fx_all`: todos los grupos apagados, sobre `dialogue` + `towns` y con `RelinkDeckTuner` en `Mode = 0`. Sirve para medir el techo de ganancia. `patch_index.py` admite ahora que un mod posterior sustituya un archivo de otro: `fx_all` reescribe los filtros de `towns` conservando sus cambios (verificado: solo difieren los `active_`).
 
 ---
