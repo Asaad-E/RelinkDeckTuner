@@ -320,6 +320,23 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
 - Aplicar también la bajada de resolución en pueblos (necesita detectar la zona).
 - Reducir NPCs (`npcConfig`, §4.2).
 
+### 7.8 Prueba por eliminación de efectos (2026‑11‑02) [PENDIENTE]
+
+Con la escala de resolución sola no basta: algunas escenas siguen en 26 FPS incluso a 0.8, y se ve mal. El usuario juega con todos los ajustes gráficos al mínimo (Standard).
+
+`tools/build_effects.py` apaga componentes completos de post‑proceso (`<Componente>.active_ → false` en todos los `filter/*.ccomp.msg`), por grupos:
+
+| Grupo | Componentes | Fotogramas clave apagados (todas las zonas) |
+|---|---|---|
+| snn | SymmetricNearestNeighborParameter (filtro pictórico) | 145 |
+| dof | DofParameter | 168 |
+| aal | AmbientAreaLightParameter (hasta 2.048 luces por pasada en Seedhollow) | 172 |
+| sky | SkyCloudSdfParameter (nubes) | 69 |
+| post | Bloom, MotionBlur, ColorShadow, DropShadow | 171 / 158 / 13 / 130 |
+| plant | PlantParameter (viento en vegetación) | 68 |
+
+Primera variante `fx_all`: todos los grupos apagados, sobre `dialogue` + `towns` y con `RelinkDeckTuner` en `Mode = 0`. Sirve para medir el techo de ganancia. `patch_index.py` admite ahora que un mod posterior sustituya un archivo de otro: `fx_all` reescribe los filtros de `towns` conservando sus cambios (verificado: solo difieren los `active_`).
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas

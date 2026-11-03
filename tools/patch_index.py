@@ -3,6 +3,7 @@
 Usage: python -I patch_index.py <original data.i> <out_dir> <mod_dir> [<mod_dir> ...]
 
 Each <mod_dir> is a Reloaded mod from build_mod.py (files under GBFR/data/<path>).
+If two mods contain the same file, the one given later wins.
 Writes <out_dir>/data.i and <out_dir>/data/<path>: every mod file is removed from
 the archive tables and listed as an external file, which is how the game already
 loads data/sound and data/ui (same approach as GBFRDataTools' mod manager).
@@ -79,7 +80,7 @@ def main():
                 p = os.path.join(dp, n)
                 rel = os.path.relpath(p, root).replace(os.sep, "/")
                 if rel in files:
-                    sys.exit(f"{rel} is in two mods")
+                    print(f"  {rel}: taken from {m} (later mod wins)")
                 files[rel] = p
 
     arc_hashes = list(idx.archive_hashes)
