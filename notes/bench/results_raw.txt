@@ -69,3 +69,5 @@ run11 10:23 T5_final_bias005_slot1: samples 16 median 37.0 min 36.0 max 37.0 FPS
 run11 10:24 T5_final_bias005_slot3: samples 17 median 48.0 min 47.0 max 49.0 FPS | field median 35.0
 run11 10:26 T6_final_veg0_bias005_slot1: samples 17 median 39.0 min 37.0 max 40.0 FPS | field median 50.0
 run11 10:27 T6_final_veg0_bias005_slot3: samples 16 median 60.0 min 59.0 max 61.0 FPS | field median 35.0
+run12 10:40 T7_final_veg015_slot1: samples 16 median 31.0 min 30.0 max 32.0 FPS | field median 50.0
+run12 10:41 T7_final_veg015_slot3: samples 16 median 46.0 min 45.0 max 46.0 FPS | field median 35.0
