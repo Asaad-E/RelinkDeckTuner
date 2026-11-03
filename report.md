@@ -528,7 +528,7 @@ Paseo de ~1,5 min por Seedhollow (slot 3), mismo recorrido, paquete final (veget
 | NPCs 100 % (`density_` 5.10) | 29,9 | 33,5 / 34,2 ms | 152 ms, 42 ms, 41 ms |
 | NPCs 80 % (`density_` 4.08) | 29,9 | 33,5 / 34,3 ms | 41 ms |
 
-El salto de ~370‑390 ms al principio de cada sesión es la carga. Con el paquete final, **Seedhollow va a 30 FPS estables y casi sin tirones**. Bajar la densidad de NPCs al 80 % no cambia nada medible, y el usuario lo ve "casi igual". Al principio del proyecto el frametime en pueblo oscilaba entre 28 y 38 ms: la mejora viene de la vegetación ligera, no de los NPCs. Se mantiene la densidad original.
+El salto de ~370‑390 ms al principio de cada sesión es la carga. Con el paquete final, **Seedhollow va a 30 FPS estables y casi sin tirones**. Bajar la densidad de NPCs al 80 % no cambia nada medible, y el usuario lo ve "casi igual". Al principio del proyecto el frametime en pueblo oscilaba entre 28 y 38 ms: la mejora viene de la vegetación ligera, no de los NPCs. Aun así, el usuario prefiere dejarla en el 80 % (sin coste visible): forma parte del paquete final (`towns_npc080`), junto con el LOD lejano de GBFRelinkFix a 0.8 y las sombras a 128.
 
 ---
 

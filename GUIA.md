@@ -8,8 +8,8 @@ Mod de rendimiento para Granblue Fantasy: Relink v2.0.5 en Steam Deck, con los a
 |---|---|---|
 | **Vegetación LOD1** | `data.i` + `data/model/…/*.minfo` (606 modelos) | Árboles, arbustos y hierba usan su segundo nivel de detalle también de cerca. Es lo que más pesa en los diálogos con vegetación detrás (un solo arbusto costaba el 31 % del fotograma). Las hojas conservan el viento. Afecta a todo el juego. |
 | **RelinkDeckTuner.asi** | `scripts/RelinkDeckTuner.asi` + `.ini` | Durante los diálogos baja **solo la resolución del 3D** (la interfaz y los textos siguen nítidos) y la devuelve al terminar. Sustituye el reescalador del juego, que causaba bandas horizontales, por **AMD FSR 1.0**. |
-| **Mods de datos** | `data/layout/timeline/*_light.scene.msg`, `data/filter/pc00|pd00/*` | Quitan sombras dinámicas a luces de cinemáticas y simplifican sombras y niebla en Folca/Seedhollow. Efecto pequeño. |
-| **GBFRelinkFix 1.1.5** (de Lyall) | `winmm.dll` (cargador ASI) + `scripts/GBFRelinkFix.*` | Salta los logos; sombras a 128 (la mitad que Standard); LOD lejano a 0.75. |
+| **Mods de datos** | `data/layout/timeline/*_light.scene.msg`, `data/filter/pc00|pd00/*`, `data/system/NPC/*` | Quitan sombras dinámicas a luces de cinemáticas, simplifican sombras y niebla en Folca/Seedhollow y dejan la densidad de NPCs al 80 %. Efecto pequeño. |
+| **GBFRelinkFix 1.1.5** (de Lyall) | `winmm.dll` (cargador ASI) + `scripts/GBFRelinkFix.*` | Salta los logos; sombras a 128 (la mitad que Standard); LOD lejano a 0.8. |
 
 ## `scripts/RelinkDeckTuner.ini`
 
