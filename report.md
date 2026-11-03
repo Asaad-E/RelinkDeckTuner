@@ -530,6 +530,14 @@ Paseo de ~1,5 min por Seedhollow (slot 3), mismo recorrido, paquete final (veget
 
 El salto de ~370‑390 ms al principio de cada sesión es la carga. Con el paquete final, **Seedhollow va a 30 FPS estables y casi sin tirones**. Bajar la densidad de NPCs al 80 % no cambia nada medible, y el usuario lo ve "casi igual". Al principio del proyecto el frametime en pueblo oscilaba entre 28 y 38 ms: la mejora viene de la vegetación ligera, no de los NPCs. Aun así, el usuario prefiere dejarla en el 80 % (sin coste visible): forma parte del paquete final (`towns_npc080`), junto con el LOD lejano de GBFRelinkFix a 0.8 y las sombras a 128.
 
+### 7.17 Opción C: valor de "Rendering" en memoria [VERIFICADO estático; validación en juego pendiente]
+
+- `0x20d320(settings*, out*, key)` devuelve el valor de una opción por su clave. Para "Rendering" (`TXT_PAU_OPT_GRA_SIMULATION`, `0x9a9f05f8`) lee el byte `settings + 0x42`.
+- El objeto es el singleton apuntado por `exe + 0x7c25030`.
+- Detalle en `notes/agy_c/README.md`, que incluye la corrección: el primer análisis de agy usó offsets de fichero en lugar de RVA.
+
+**Problema de diseño:** usar "Rendering" para controlar la escala también cambia lo que esa opción hace en el motor. Con el preset Standard está al mínimo, y subirla para elegir escala aumentaría ese coste. La alternativa sin efectos secundarios es la hotkey (F9/F10, §RelinkDeckTuner 0.11). Una opción de menú propia (vía D) sigue siendo la solución limpia, pero cuesta mucho más.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
