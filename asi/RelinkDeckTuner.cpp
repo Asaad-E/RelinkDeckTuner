@@ -49,6 +49,7 @@ struct Config {
     int exitDelayMs = 700;  // dialogue considered over after this long without camera hits
     int logPeriodMs = 2000; // periodic snapshot; 0 = only on changes
     double lodBias = 1.0;   // scenery LOD factor during dialogues (1.0 = unchanged)
+    double baseScale = 1.0; // 3D scale outside dialogues in Mode 1 (1.0 = native)
 };
 
 uintptr_t g_base;
@@ -281,6 +282,10 @@ void ReadConfig(Config& c) {
     c.exitDelayMs = GetPrivateProfileIntA("RelinkDeckTuner", "ExitDelayMs", 700, g_iniPath);
     if (c.exitDelayMs < 0) c.exitDelayMs = 0;
     c.logPeriodMs = GetPrivateProfileIntA("RelinkDeckTuner", "LogPeriodMs", 2000, g_iniPath);
+    GetPrivateProfileStringA("RelinkDeckTuner", "BaseScale", "1.0", buf, sizeof(buf), g_iniPath);
+    c.baseScale = atof(buf);
+    if (!(c.baseScale >= 0.4)) c.baseScale = 0.4;
+    if (c.baseScale > 1.0) c.baseScale = 1.0;
     GetPrivateProfileStringA("RelinkDeckTuner", "DialogueLodBias", "1.0", buf, sizeof(buf), g_iniPath);
     c.lodBias = atof(buf);
     if (!(c.lodBias >= 0.1)) c.lodBias = 0.1;
@@ -324,6 +329,7 @@ DWORD WINAPI Worker(LPVOID) {
     LONG64 lastHits = 0, logHits = 0, logFrames = 0;
     ULONGLONG lastHitTime = 0, lastLog = 0, lastIniCheck = 0;
     bool inDialogue = false, applied = false;
+    double appliedScale = 1.0;
     uint32_t appliedIndex = 0;
     int32_t orig[4]{}, wrote[4]{};
 
@@ -338,8 +344,8 @@ DWORD WINAPI Worker(LPVOID) {
                 CompareFileTime(&fa.ftLastWriteTime, &lastIni) != 0) {
                 lastIni = fa.ftLastWriteTime;
                 ReadConfig(cfg);
-                Log("config: Mode=%d Scale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f", cfg.mode,
-                    cfg.scale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias);
+                Log("config: Mode=%d Scale=%.2f BaseScale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f",
+                    cfg.mode, cfg.scale, cfg.baseScale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias);
             }
         }
 
@@ -356,7 +362,9 @@ DWORD WINAPI Worker(LPVOID) {
         uint32_t index = *reinterpret_cast<uint32_t*>(g_base + kPresetIndex);
         if (index >= 6) continue;
         int32_t* row = Row(index);
-        bool want = cfg.mode == 2 || (cfg.mode == 1 && inDialogue);
+        // Mode 1: Scale in dialogues, BaseScale elsewhere. Mode 2: Scale always. Mode 0: native.
+        double target = cfg.mode == 0 ? 1.0 : (cfg.mode == 2 || inDialogue) ? cfg.scale : cfg.baseScale;
+        bool want = target < 0.999;
 
         if (applied && (index != appliedIndex || memcmp(row + 9, wrote, sizeof(wrote)) != 0)) {
             // The game rewrote the row (options changed / preset switched): take its values as new originals.
@@ -366,13 +374,14 @@ DWORD WINAPI Worker(LPVOID) {
                 memcpy(old + 9, orig, sizeof(orig));  // leave the preset we left untouched
             applied = false;
         }
-        if (want && !applied && row[9] > 0 && row[10] > 0) {  // skip rows the game has not filled yet
-            memcpy(orig, row + 9, sizeof(orig));
+        if (want && (!applied || target != appliedScale) && row[9] > 0 && row[10] > 0) {  // skip unfilled rows
+            if (!applied) memcpy(orig, row + 9, sizeof(orig));
             memcpy(wrote, orig, sizeof(wrote));
             for (int i = 0; i < 4; i++) {
                 bool on = (i < 2) ? (cfg.fields & 1) : (cfg.fields & 2);
-                if (on) wrote[i] = static_cast<int32_t>(orig[i] * cfg.scale) & ~1;
+                if (on) wrote[i] = static_cast<int32_t>(orig[i] * target) & ~1;
             }
+            appliedScale = target;
             StoreSizes(row + 9, wrote);
             applied = true;
             appliedIndex = index;
@@ -416,7 +425,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.9 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.10 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");

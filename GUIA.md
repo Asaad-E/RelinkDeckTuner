@@ -17,7 +17,8 @@ El juego lo relee cada segundo, así que se puede cambiar con el juego abierto. 
 
 | Clave | Valor recomendado | Qué hace |
 |---|---|---|
-| `Mode` | `1` | 0 = no toca nada (solo log); 1 = solo en diálogos; 2 = siempre. |
+| `Mode` | `1` | 0 = no toca nada (solo log); 1 = `Scale` en diálogos y `BaseScale` fuera; 2 = `Scale` siempre. |
+| `BaseScale` | `0.95` (en prueba) | Escala del 3D fuera de los diálogos, también con FSR1. 1.0 = nativo. |
 | `Scale` | `0.8` | Escala del 3D por eje mientras está activo (0.8 = 1024x576 → 1280x720). 0.85 se ve algo más nítido con menos margen. |
 | `Fields` | `1` | 1 = solo el 3D (UI nítida). No usar 3. |
 | `Upscaler` | `1` | 1 = FSR1; 2 = bicúbico; 0 = el del juego (con bandas). |
