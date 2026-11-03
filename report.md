@@ -1,7 +1,7 @@
 # Granblue Fantasy: Relink: rendimiento en Steam Deck (diálogos y pueblos)
 
 Versión analizada: `granblue_fantasy_relink.exe` v2.0.5 (fichero `v2.0.5.xxh128`, 28‑ago‑2026), índice `data.i` con codename `relink`, 12 archivos `data.N`.
-Fecha: 2026‑11‑02.
+Fecha: 2026‑11‑02 (investigación) y 2026‑11‑03 (perfilado, FSR1, benchmarks).
 
 Leyenda de confianza:
 
@@ -10,6 +10,19 @@ Leyenda de confianza:
 - **[HIPÓTESIS]**: deducción razonable que solo puede confirmarse en el juego.
 
 ---
+
+## 0. Estado final (2026‑11‑03), medido
+
+| Pregunta | Respuesta con datos |
+|---|---|
+| ¿Qué hace caer los diálogos? | **Dibujar la geometría cercana**, sobre todo vegetación con alpha test. En el Verbose Man, un solo arbusto (`bg012c`, 9.366 índices × 19 instancias) es el 31 % del fotograma y la vegetación el 49 %. En Lyria la vegetación es el 27 % y el escenario opaco el 28 % (RenderDoc, §7.9 y §7.11). Post‑proceso ~1 ms, sombras y LOD lejano ≈ 0 (§7.8). |
+| ¿Sube el juego la resolución en diálogos? | No (§3.2, confirmado en las capturas: 1280x720 constante). |
+| ¿Qué funciona? | (1) **Vegetación LOD1** por datos (`build_foliage.py`): −15 % de tiempo de fotograma en diálogos y mejora también caminando. (2) **Bajar solo el 3D en diálogos** (`RelinkDeckTuner.asi`, `Fields = 1`): la UI sigue nítida y casi no parpadea. (3) **FSR1** en lugar del reescalador temporal del juego, que dejaba bandas: mismo coste y sin bandas (§7.12). |
+| Resultado | PC: Lyria 18 → 25 FPS y Verbose Man 25 → 38 con el paquete final (§7.13‑7.15). Deck: Lyria a 30 FPS con LOD1 + 0.85. |
+| ¿Qué no funcionó? | Opciones ocultas del menú (el PC no tiene código para ellas), apagar efectos de post‑proceso (~1 ms y se ve mal), LOD lejano y sombras (no afectan a lo cercano) y `DialogueLodBias` (poca ganancia; la vegetación instanciada no pasa por ese bucle). |
+| Pendiente | Probar en la Deck el paquete final con FSR1 (validado en PC con GBFRelinkFix y RelinkDeckTuner 0.8 juntos). Medir pueblos con tirones (LOD 0.75 frente a 0.6, densidad de NPCs). |
+
+Guía de uso: [GUIA.md](GUIA.md).
 
 ## 1. Resumen ejecutivo
 
