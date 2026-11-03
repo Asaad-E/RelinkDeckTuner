@@ -294,6 +294,17 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
 - **Pueblo:** este punto de Seedhollow está **limitado por GPU**, no por CPU (la CPU baja a 1,4 GHz). La vegetación y la escena del mercado mandan, igual que en los diálogos.
 - **Pueblo con mods:** llega al tope de 30 y la GPU necesita menos reloj y energía (1282 MHz / 7,8 W frente a 1419 MHz / 9,7 W). El presupuesto que sobra pasa a la CPU (de 1,4 a 2,4 GHz). Es la mejora más clara medida hasta ahora. La causa más probable es el LOD 0.6 y las sombras 512 de GBFRelinkFix sobre la vegetación lejana; no está separado del mod `towns`. [Cámara casi idéntica, no exacta.]
 
+### 7.7 Fase 2: `RelinkDeckTuner.asi` (2026‑11‑02) [MEDIDO / PENDIENTE]
+
+- **Detección de diálogo:** el gancho en `0x942698` (cámara de cinemática) se ejecuta una vez por fotograma durante el diálogo (919 llamadas en 36 s) y **0** veces caminando por el pueblo. Es una señal válida. [VERIFICADO en el log]
+- En la Deck, la fila de preset activa es la 5 (Custom) con `1280,720,1280,720`. Las globales `0x6b822e0..ec` son iguales.
+- Bajada de resolución solo en diálogo (`Mode = 1`, `Scale = 0.75`): activada en caliente a las 21:56. Resultado pendiente.
+
+**Pendiente: pueblos/ciudad.** Con `LOD Multiplier = 0.75` (antes 0.6), el usuario nota **más tirones en el pueblo** y un **uso muy alto en la ciudad** (Seedhollow). Hay que reducir el coste ahí sin volver a 0.6 en todas partes. Opciones:
+- LOD por zona: 0.6 solo en pueblos.
+- Aplicar también la bajada de resolución en pueblos (necesita detectar la zona).
+- Reducir NPCs (`npcConfig`, §4.2).
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
