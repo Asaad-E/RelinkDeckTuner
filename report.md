@@ -461,6 +461,49 @@ Con `Scale = 0.85` (1088x612): **30 FPS**, 33,7 ms (33,3‑34,1), GPU 99 % / 144
 - La vegetación ayuda mucho más en Seedhollow (Verbose Man, −20 %) que en Folca (Lyria, −10 %). Coincide con el perfilado: la vegetación es el 49 % del fotograma del Verbose Man y el 27 % del de Lyria.
 - Las dos palancas se suman: **LOD1 + 3D 0.85 FSR1** da −31 % de tiempo de fotograma. En la Deck esa combinación midió 30 FPS en Lyria (§7.11), lo que cuadra con 22‑23 FPS nativos × 1,33.
 
+**Segunda tanda** (con FPS de campo: caminando 12 s antes del diálogo, contador de fotogramas del bucle principal; tope 120 en PC):
+
+| Configuración | Lyria | Verbose Man | Campo Folca | Campo Seedhollow |
+|---|---|---|---|---|
+| Nativo | 18 | 25 | 45 | 30 |
+| Vegetación LOD1 | 21 | 31 | 50 | 32 |
+| LOD1 + FSR1 0.85 | 25 | 39 | — | — |
+| LOD1 + FSR1 0.8 | 26 | 43 | 48 | 33 |
+| LOD1 + FSR1 0.75 | 30 | 47 | 51 | 34 |
+| Vegetación LOD2 | 22 | 36 | 52 | 37 |
+
+La vegetación ligera también ayuda fuera de los diálogos, sobre todo en Seedhollow (30 → 32 con LOD1, 37 con LOD2). Resultados en bruto: `notes/bench/results_raw.txt`.
+
+### 7.14 Selección de LOD del motor y `DialogueLodBias` [VERIFICADO; ganancia pequeña]
+
+**Cómo se encontró:**
+- `asi/research/lodtrace.cpp`, un `.asi` de investigación solo para PC, busca en memoria los umbrales de `bg012c` {1.0, 0.6, 0.24, 0.2} y pone watchpoints hardware (DR0‑DR3) en todos los hilos.
+- Las copias "en bruto" del `.minfo` (5) no se leen nunca después de cargar la zona, lo que confirma "only read once".
+- Hay 2 copias derivadas (precedidas por 5.0) que se leen **~930 veces/s** desde `exe+0x23a4bc6`.
+
+**El bucle de selección** (`0x23a4b97‑0x23a4c03`):
+- Multiplica el tamaño en pantalla del modelo por un factor de la tabla `.rdata` `exe+0x54abf98` = {0.25, 1.0}. El índice lo da un flag del objeto, y la tabla tiene una sola referencia en todo el ejecutable.
+- Recorre los umbrales y elige el primer LOD cuyo umbral queda por debajo, con histéresis respecto al LOD actual.
+
+**`DialogueLodBias`** (RelinkDeckTuner 0.8):
+- Escribe ese 1.0 (4 bytes, solo si la tabla coincide byte a byte) mientras la cámara de cinemática está activa, y lo restaura al salir.
+- Medido: 0.5 → Lyria 20 FPS y Verbose Man 26; 0.3 → 21 y 26. Sumado a LOD1 + FSR1 0.85 → 27 y 40 (antes 25 y 39).
+- **Coste visible**: a 0.3 las balas de heno de Folca pasan a cajas planas (`notes/bench/lodbias_030_vs_nativo.png`).
+- Los arbustos caros del Verbose Man **no cambian**: se dibujan con `DrawIndexedInstancedIndirect` (instancias en GPU), cuyo LOD no pasa por este bucle. Solo responden a los umbrales del `.minfo` (`build_foliage.py`).
+- Conclusión: se deja como opción, **desactivada por defecto (1.0)**.
+
+### 7.15 Configuración recomendada para la Deck
+
+| Pieza | Valor | Por qué |
+|---|---|---|
+| Vegetación (`foliage_lod1`) | 606 modelos empiezan en LOD1 | −15 % de tiempo de fotograma en diálogos con vegetación; conserva el viento (LOD2 lo pierde). También ayuda caminando. |
+| RelinkDeckTuner | `Mode = 1`, `Scale = 0.85`, `Fields = 1`, `Upscaler = 1` | Solo el 3D baja en diálogos, la UI queda nítida, casi sin parpadeo, y FSR1 sin bandas. Con LOD1, Lyria llegó a 30 en la Deck. |
+| `DialogueLodBias` | 1.0 (desactivado) | Poca ganancia y cambio visible. |
+| Mods `dialogue` + `towns` | incluidos | No afectan a estos diálogos. Son baratos y actúan en interiores/noches y en `pc00`/`pd00`. |
+| GBFRelinkFix | sombras 256 (= Standard), LOD 0.75 | Sombras como el preset; el LOD 0.75 es elección del usuario (con 0.6 había menos tirones en pueblos). |
+
+Si una escena concreta sigue por debajo de 30, el siguiente paso es `Scale = 0.8`. En PC aporta +10 % de FPS en el Verbose Man y +4 % en Lyria, a cambio de algo más de blandura (sin bandas, gracias a FSR1).
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas

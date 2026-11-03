@@ -56,29 +56,56 @@ static void SetWatch(const uintptr_t* addrs, int n) {
     CloseHandle(snap);
 }
 
+// Pages can change protection or be freed while we scan: a fault just ends this region.
+// Candidate encodings of bg012c's LOD1..3 thresholds {0.6, 0.24, 0.2}: as stored, squared,
+// and as stored but with stride 8 (interleaved with another float).
+static const float kPats[3][3] = {{0.6f, 0.24f, 0.2f}, {0.36f, 0.0576f, 0.04f}, {0.6f, 0.24f, 0.2f}};
+static const int kStride[3] = {1, 1, 2};
+static uintptr_t g_hits[3][16];
+static int g_nhits[3];
+static void ScanRegion(const uint32_t* w, SIZE_T n) {
+    __try {
+        for (int k = 0; k < 3; k++) {
+            uint32_t a, b, c; memcpy(&a, &kPats[k][0], 4); memcpy(&b, &kPats[k][1], 4); memcpy(&c, &kPats[k][2], 4);
+            int st = kStride[k];
+            for (SIZE_T i = 0; i + 2 * st < n; i++)
+                if (w[i] == a && w[i + st] == b && w[i + 2 * st] == c && g_nhits[k] < 16)
+                    g_hits[k][g_nhits[k]++] = reinterpret_cast<uintptr_t>(w + i);
+        }
+    } __except (EXCEPTION_EXECUTE_HANDLER) {
+    }
+}
+
 static DWORD WINAPI Worker(LPVOID) {
     char ini[MAX_PATH]; GetModuleFileNameA(nullptr, ini, MAX_PATH);
-    int delay = 90;
+    int delay = 75;
     Sleep(delay * 1000);
-    const float pat[4] = {1.0f, 0.6f, 0.24f, 0.2f};
-    uintptr_t found[64]; int nf = 0;
+    fprintf(g_log, "scanning\n"); fflush(g_log);
+    DWORD t0 = GetTickCount();
+    unsigned long long scanned = 0, lastReport = 0;
     MEMORY_BASIC_INFORMATION mbi;
     for (uint8_t* p = nullptr; VirtualQuery(p, &mbi, sizeof(mbi)); p = static_cast<uint8_t*>(mbi.BaseAddress) + mbi.RegionSize) {
-        if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS)) ||
+        if (mbi.State != MEM_COMMIT || (mbi.Protect & (PAGE_GUARD | PAGE_NOACCESS | PAGE_NOCACHE | PAGE_WRITECOMBINE)) || mbi.Type != MEM_PRIVATE ||
             !(mbi.Protect & (PAGE_READWRITE | PAGE_READONLY | PAGE_WRITECOPY))) continue;
-        auto* b = static_cast<uint8_t*>(mbi.BaseAddress);
-        for (SIZE_T i = 0; i + 16 <= mbi.RegionSize; i += 4)
-            if (memcmp(b + i, pat, 16) == 0 && nf < 64) found[nf++] = reinterpret_cast<uintptr_t>(b + i);
+        ScanRegion(static_cast<const uint32_t*>(mbi.BaseAddress), mbi.RegionSize / 4);
+        scanned += mbi.RegionSize;
+        if (scanned - lastReport > (1ull << 30)) {
+            lastReport = scanned;
+            fprintf(g_log, "  %llu MB scanned, %lu ms\n", scanned >> 20, GetTickCount() - t0);
+            fflush(g_log);
+        }
     }
-    fprintf(g_log, "matches: %d\n", nf);
-    for (int i = 0; i < nf; i++) {
-        MEMORY_BASIC_INFORMATION m; VirtualQuery(reinterpret_cast<void*>(found[i]), &m, sizeof(m));
-        fprintf(g_log, "  %p region %p type %lx\n", (void*)found[i], m.AllocationBase, m.Type);
+    uintptr_t w[4]; int nw = 0;
+    for (int k = 0; k < 3; k++) {
+        fprintf(g_log, "pattern %d: %d matches\n", k, g_nhits[k]);
+        for (int i = 0; i < g_nhits[k]; i++) {
+            float prev = *reinterpret_cast<const float*>(g_hits[k][i] - 4 * kStride[k]);
+            fprintf(g_log, "  %p prev=%g\n", (void*)g_hits[k][i], prev);
+            if ((k > 0 || prev != 1.0f) && nw < 4) w[nw++] = g_hits[k][i];  // not a raw minfo copy
+        }
     }
     fflush(g_log);
-    if (!nf) return 0;
-    uintptr_t w[4]; int nw = 0;
-    for (int i = 0; i < nf && nw < 4; i++) w[nw++] = found[i] + 4;  // watch the 0.6 (LOD1 threshold)
+    if (!nw) { fprintf(g_log, "no derived copies found\n"); fflush(g_log); return 0; }
     AddVectoredExceptionHandler(1, Vectored);
     g_active = 1;
     SetWatch(w, nw);

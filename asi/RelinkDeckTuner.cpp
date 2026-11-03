@@ -30,6 +30,11 @@ constexpr uintptr_t kSizeCopy = 0x6bbaa0;      // function that copies them
 constexpr uintptr_t kCamHook = 0x942698;       // mov rax,[rsi+60h]; vmovss xmm2,[rax+9D4h]
 constexpr uintptr_t kCamResume = 0x9426a4;
 constexpr int kRowSize = 0x4c;
+// Scene-graph LOD selection (0x23a4bac: vmulss xmm3, [table + flag*4]) scales each model's screen size
+// by this 2-float table before comparing it with the model's lod_screen_size_thresholds. Entry 1
+// (1.0) is the normal factor; lowering it makes scenery pick lighter LODs. Only read there.
+constexpr uintptr_t kLodFactorTable = 0x54abf98;
+const float kLodFactorDefault[2] = {0.25f, 1.0f};
 
 const uint8_t kSizeCopyBytes[] = {0x41, 0x57, 0x41, 0x56, 0x41, 0x55, 0x41, 0x54, 0x56, 0x57, 0x55, 0x53,
                                   0x48, 0x83, 0xec, 0x38, 0x8b, 0x05, 0x8a, 0x8e, 0x97, 0x06};
@@ -41,6 +46,7 @@ struct Config {
     int fields = 3;         // bit 1: row +0x24/+0x28, bit 2: row +0x2c/+0x30
     int exitDelayMs = 700;  // dialogue considered over after this long without camera hits
     int logPeriodMs = 2000; // periodic snapshot; 0 = only on changes
+    double lodBias = 1.0;   // scenery LOD factor during dialogues (1.0 = unchanged)
 };
 
 uintptr_t g_base;
@@ -202,6 +208,18 @@ void ReadConfig(Config& c) {
     c.exitDelayMs = GetPrivateProfileIntA("RelinkDeckTuner", "ExitDelayMs", 700, g_iniPath);
     if (c.exitDelayMs < 0) c.exitDelayMs = 0;
     c.logPeriodMs = GetPrivateProfileIntA("RelinkDeckTuner", "LogPeriodMs", 2000, g_iniPath);
+    GetPrivateProfileStringA("RelinkDeckTuner", "DialogueLodBias", "1.0", buf, sizeof(buf), g_iniPath);
+    c.lodBias = atof(buf);
+    if (!(c.lodBias >= 0.1)) c.lodBias = 0.1;
+    if (c.lodBias > 1.0) c.lodBias = 1.0;
+}
+
+float* g_lodFactor;  // &table[1], made writable at init; null if the table did not match
+
+void SetLodFactor(float v) {
+    if (!g_lodFactor || *g_lodFactor == v) return;
+    InterlockedExchange(reinterpret_cast<volatile LONG*>(g_lodFactor), *reinterpret_cast<LONG*>(&v));
+    Log("scenery LOD factor -> %.2f", v);
 }
 
 // Write width/height pairs as single 64-bit stores so the main thread, which copies these fields
@@ -243,8 +261,8 @@ DWORD WINAPI Worker(LPVOID) {
                 CompareFileTime(&fa.ftLastWriteTime, &lastIni) != 0) {
                 lastIni = fa.ftLastWriteTime;
                 ReadConfig(cfg);
-                Log("config: Mode=%d Scale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d", cfg.mode, cfg.scale,
-                    cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs);
+                Log("config: Mode=%d Scale=%.2f Fields=%d ExitDelayMs=%d LogPeriodMs=%d DialogueLodBias=%.2f", cfg.mode,
+                    cfg.scale, cfg.fields, cfg.exitDelayMs, cfg.logPeriodMs, cfg.lodBias);
             }
         }
 
@@ -252,6 +270,7 @@ DWORD WINAPI Worker(LPVOID) {
         if (hits != lastHits) lastHitTime = now;
         lastHits = hits;
         bool nowDialogue = lastHitTime && now - lastHitTime < static_cast<ULONGLONG>(cfg.exitDelayMs);
+        SetLodFactor(nowDialogue && cfg.mode != 0 ? static_cast<float>(cfg.lodBias) : 1.0f);
         if (nowDialogue != inDialogue) {
             inDialogue = nowDialogue;
             Log("dialogue camera %s (hits total %lld)", inDialogue ? "ON" : "OFF", hits);
@@ -312,7 +331,7 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.7 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.8 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
 
     if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
         Log("render-size function not found at expected address: wrong game version, disabled");
@@ -329,6 +348,12 @@ void Init(HMODULE self) {
     }
     Log("camera hook installed at +%zx", kCamHook);
     g_frames = InstallCounterHook(g_base + kSizeCopy, kSizeCopyBytes, 6);  // push r15/r14/r13
+    if (BytesMatch(kLodFactorTable, reinterpret_cast<const uint8_t*>(kLodFactorDefault), sizeof(kLodFactorDefault))) {
+        DWORD old;
+        auto* t = reinterpret_cast<float*>(g_base + kLodFactorTable);
+        if (VirtualProtect(t, sizeof(kLodFactorDefault), PAGE_READWRITE, &old)) g_lodFactor = t + 1;
+    }
+    Log(g_lodFactor ? "scenery LOD factor table found" : "scenery LOD factor table not found: DialogueLodBias off");
     Log(g_frames ? "frame counter installed at +%zx" : "frame counter not installed (+%zx)", kSizeCopy);
     g_upscaler = GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath);
     if (g_upscaler == 1 || g_upscaler == 2) {
