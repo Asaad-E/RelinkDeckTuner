@@ -339,6 +339,10 @@ Referencia previa: diálogo de Lyria ("No wonder you're a master swordswoman", Z
 
 Primera variante `fx_all`: todos los grupos apagados, sobre `dialogue` + `towns` y con `RelinkDeckTuner` en `Mode = 0`. Sirve para medir el techo de ganancia. `patch_index.py` admite ahora que un mod posterior sustituya un archivo de otro: `fx_all` reescribe los filtros de `towns` conservando sus cambios (verificado: solo difieren los `active_`).
 
+**Resultado `fx_all`** ("Verbose Man", sin escala de resolución): **28 FPS**, 36,0 ms (35,5‑36,5), GPU 99 % / 1415 MHz / 10,5 W. Con solo `dialogue` + `towns` eran 27 FPS / 37,0 ms; de fábrica, 26 / 38,2. **Todos esos efectos juntos cuestan ~1 ms** y el juego se ve "horrible" sin ellos. Descartado: el coste está en la geometría (vegetación, personajes, sombras), no en el post‑proceso.
+
+**Error detectado en nuestra configuración:** el usuario juega con Lighting Quality = Standard, cuya resolución de sombras por defecto es **256** (según el `.ini` de GBFRelinkFix: Ultra 2048, High 1024, Standard 256). Al poner `Resolution = 512` en GBFRelinkFix estábamos **duplicando** la resolución de sombras respecto a su preset. Siguiente prueba: sombras 128 y LOD 0.4, para medir el peso de la geometría y las sombras.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
