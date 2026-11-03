@@ -377,6 +377,11 @@ Primera prueba (`--level 2`): 243 modelos de vegetación usan como mucho el LOD2
 
 **Resultado (Deck, "Verbose Man", resolución nativa 1280x720, sin escala):** **30 FPS**, 33,3 ms (28,9‑37,0), GPU **85 % / 1283 MHz / 7,3 W**, CPU 3,2 GHz. Antes: 27 FPS, 36,5‑37 ms, GPU 99 % / 10,4 W. **Es la primera vez que este diálogo llega a 30 sin bajar la resolución.** La GPU incluso queda con margen y cede energía a la CPU. El usuario lo da por bueno ("perfecto"). Queda como paquete principal de la Deck: `dialogue` + `towns` + `foliage_lod2` + GBFRelinkFix (sombras 256, LOD 0.75) + `RelinkDeckTuner` en `Mode = 0`.
 
+**Pero:**
+- El diálogo de Lyria (slot 1, Zinkenstill) con `foliage_lod2` y resolución nativa da **24 FPS**, 40,9 ms, GPU 94 %. Antes, con toda la imagen a 0.85, eran 26. En esa escena la vegetación aligerada no basta; habrá que perfilarla aparte.
+- El usuario ve los árboles **"muy quietos"**: los LOD bajos no tienen la animación de viento. LOD2 es demasiado agresivo.
+- Se vuelve a la vegetación original (`dialogue` + `towns`) para que el usuario compare el aspecto.
+
 ---
 
 ## 8. Hipótesis descartadas o no verificadas
