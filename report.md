@@ -310,6 +310,7 @@ Mismo punto de la partida ("Head to the Family Zathba's base", Seedhollow).
   - **Modo "siempre" (`Mode = 2`, `Fields = 1`), guardado para más adelante:** 0.9 (1152x648) y 0.95 (1216x684) se ven aceptables, con un solo parpadeo al arrancar; 0.8 se ve demasiado bajo. A 0.95 la ganancia es pequeña (~10 % de píxeles). Por ahora se deja en 1.0.
   - **Configuración elegida (22:30):** `Mode = 1`, `Scale = 0.8`, `Fields = 1`, es decir, solo el 3D baja a 1024x576 durante los diálogos y la UI sigue nítida. Pendiente de medir y de ver si el parpadeo es menos visible al cambiar solo el 3D.
   - Con solo el 3D en diálogos (`Fields = 1`, 0.8), el **parpadeo es casi nulo** según el usuario. Se sube a `Scale = 0.9` (1152x648) en diálogos.
+  - Solo 3D a 0.9 (1152x648), "Verbose Man": **30 FPS**, 33,1 ms (32,1‑35,0), GPU 89 % / 1411 MHz / 9,4 W. Cumple, pero con poco margen. Se prueba 0.85.
   - **Problema: parpadeo negro** al cambiar de resolución, también cambiando solo el segundo par (`Fields = 2`). Causa: las globales de tamaño se usan para **crear** los render targets (p. ej. `0x1da6ce` copia el tamaño en un descriptor de textura, `0x26dac6` reserva buffers de `ancho×alto×3`). Cambiar el tamaño obliga a recrearlos y se pierde al menos un fotograma (y el historial de TAA). No es un fallo del mod: es inherente a cambiar el tamaño en caliente. Para evitarlo hay dos vías:
     - cambiar solo cuando la pantalla ya está en negro (pantallas de carga entre zonas);
     - un escalado por viewport dentro del motor, que es mucho más complejo.
