@@ -114,8 +114,8 @@ void Log(const char* fmt, ...) {
 // When the render size is lowered, the engine upsamples the 3D image with its temporal upsampler
 // (pixel shader below, "TUP"). That shader expects alternating-column reconstruction and leaves
 // horizontal bands at arbitrary scales, so when the game creates it we hand it our upscale shader
-// instead (same bindings). Matched by the DXBC checksum, nothing else is touched. With the DoF fix
-// (dof_fix.inl) it only needs a plain bicubic: the final upscale happens after the DoF pass.
+// instead (same bindings). Matched by the DXBC checksum, nothing else is touched. In dialogues the
+// DoF pass shrinks the result again and dof_fix.inl enlarges it a second time (without sharpening).
 const uint8_t kTupShaderHash[16] = {0x0e, 0x46, 0x25, 0xda, 0x89, 0x89, 0x54, 0x02,
                                     0x38, 0x98, 0x44, 0xe5, 0x78, 0x56, 0x12, 0x32};
 
@@ -129,6 +129,11 @@ int g_upscaler;  // 1 = FSR 1.0 (EASU + RCAS), 2 = bicubic, 3 = bicubic + RCAS
 const void* UpscalePS() { return g_upscaler == 2 ? kBicubicPS : g_upscaler == 3 ? kRcasPS : kFsrPS; }
 SIZE_T UpscalePSSize() { return g_upscaler == 2 ? sizeof(kBicubicPS) : g_upscaler == 3 ? sizeof(kRcasPS) : sizeof(kFsrPS); }
 const char* UpscaleName() { return g_upscaler == 2 ? "bicubic" : g_upscaler == 3 ? "bicubic + RCAS" : "FSR 1.0 (EASU + RCAS)"; }
+// After the DoF pass the image has already been through the shader above (which sharpens), so the
+// second enlargement uses the same filter without RCAS.
+const void* PostUpscalePS() { return g_upscaler == 1 ? kEasuPS : kBicubicPS; }
+SIZE_T PostUpscalePSSize() { return g_upscaler == 1 ? sizeof(kEasuPS) : sizeof(kBicubicPS); }
+const char* PostUpscaleName() { return g_upscaler == 1 ? "FSR 1.0 EASU" : "bicubic"; }
 std::vector<uint8_t> g_testShader;  // UpscalerShaderFile (.cso) for testing replacements without a rebuild
 
 #include "dof_fix.inl"
@@ -139,11 +144,6 @@ HRESULT STDMETHODCALLTYPE HookedCreatePixelShader(void* device, const void* code
         const void* repl = UpscalePS();
         SIZE_T replLen = UpscalePSSize();
         const char* name = UpscaleName();
-        if (g_dofFix && !g_dofShaders.empty()) {  // the final upscale happens after the DoF pass
-            repl = kBicubicPS;
-            replLen = sizeof(kBicubicPS);
-            name = "bicubic (final upscale after DoF)";
-        }
         if (!g_testShader.empty() && g_dofShaders.empty()) {
             repl = g_testShader.data();
             replLen = g_testShader.size();

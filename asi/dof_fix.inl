@@ -222,8 +222,8 @@ bool PrepareDofPass(ID3D11Device* dev, ID3D11DeviceContext* ctx, ID3D11Texture2D
     DofPass& s = g_dofPass;
     if (!s.vs) {
         bool ok = SUCCEEDED(dev->CreateVertexShader(kFullscreenVS, sizeof(kFullscreenVS), nullptr, &s.vs));
-        const void* ps = UpscalePS();
-        SIZE_T psLen = UpscalePSSize();
+        const void* ps = PostUpscalePS();
+        SIZE_T psLen = PostUpscalePSSize();
         if (!g_testShader.empty()) { ps = g_testShader.data(); psLen = g_testShader.size(); }  // UpscalerShaderFile
         ok = ok && SUCCEEDED(dev->CreatePixelShader(ps, psLen, nullptr, &s.ps));
         D3D11_BUFFER_DESC bd = {32, D3D11_USAGE_DEFAULT, D3D11_BIND_CONSTANT_BUFFER, 0, 0, 0};
@@ -247,7 +247,7 @@ bool PrepareDofPass(ID3D11Device* dev, ID3D11DeviceContext* ctx, ID3D11Texture2D
         s.copyW = rw; s.copyH = rh; s.copyFmt = td.Format; s.viewFmt = viewFmt;
         float cbData[8] = {static_cast<float>(rw), static_cast<float>(rh), 1.0f / rw, 1.0f / rh, 0, 0, 0, 0};
         ctx->UpdateSubresource(s.cb, 0, nullptr, cbData, 0, 0);  // recorded with this pass
-        Log("post-DoF pass: %ux%u corner -> %ux%u target with %s", rw, rh, td.Width, td.Height, UpscaleName());
+        Log("post-DoF pass: %ux%u corner -> %ux%u target with %s", rw, rh, td.Width, td.Height, PostUpscaleName());
     }
     if (s.target != target) {
         SafeRelease(s.targetRtv);
