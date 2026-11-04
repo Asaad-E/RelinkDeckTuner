@@ -1,10 +1,8 @@
-// Replacement for the engine's temporal-upsampling resolve pixel shader (DXBC hash 0e4625da...):
-// Catmull-Rom bicubic upscale followed by AMD FidelityFX RCAS sharpening (FSR 1.0's second stage,
-// MIT licence, third_party/fsr1), in one pass. RCAS needs the upscaled colour of the pixel and of
+// Upscale shader (Upscaler = 3): Catmull-Rom bicubic upscale followed by AMD FidelityFX RCAS
+// sharpening (FSR 1.0's second stage, MIT licence, third_party/fsr1), in one pass. RCAS needs the upscaled colour of the pixel and of
 // its four neighbours; all five come from one 6x6 block of source texels (36 loads), because at the
 // small scale factors used here (>= 0.7) a neighbour is less than 1.5 source texels away.
-// Unlike EASU it does not reconstruct edges, so near-1:1 factors (0.9 -> 1152 to 1280) do not
-// turn thin outlines into steps. Same bindings and input signature as the original.
+// Same bindings and input signature as the engine's temporal upsampler.
 cbuffer ParamBuffer : register(b1)
 {
     float4 orgScreen;   // xy = source size in pixels, zw = 1 / source size
