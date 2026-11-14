@@ -104,7 +104,7 @@ build.bat
 - `tools/` — Archive parser/patcher (`gbfr_archive.py`, `patch_index.py`, `patch_any_version.py`), data mod builders (`build_mod.py`, `build_foliage.py`), RenderDoc/disassembly research scripts, and Steam Deck release packagers (`make_deck_pkg.sh`, `make_release.sh`).
 - `release_template/` — Cross-platform installer/uninstaller scripts and end-user README for release archives.
 - `notes/` — RenderDoc captures summaries, benchmark raw logs, and pattern references.
-- `GUIA.md` & `report.md` — Technical notes and setup guide (Spanish).
+- `GUIDE.md`, `proposal.md`, and `report.md` — Detailed user guide, design proposal, and profiling report.
 
 ## Credits & Third-Party Licenses
 
