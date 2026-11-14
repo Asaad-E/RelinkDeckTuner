@@ -41,33 +41,53 @@ Detailed profiling, RenderDoc breakdowns, and disassembly notes are documented i
 
 ## Installation
 
-### Option A: Prebuilt Steam Deck / v2.0.5 Release Package
-1. Place the clean v2.0.5 `data.i` in `backup/data.i` and third-party ASI loader/base files (`winmm.dll`, `scripts/GBFRelinkFix.*`) in `deck_pkg/`.
-2. Build the package and release directory:
+### Quick Install — Windows PC & Steam Deck (No Python or Compiling Required)
+
+For most players on **Windows PC** or **Steam Deck** (compatible with **v2.0.5** and **>= 2.0.5** such as Ver. 2.0.6+):
+
+1. Install an ASI loader in your `Granblue Fantasy Relink` folder (next to `granblue_fantasy_relink.exe`):
+   - Recommended: install [GBFRelinkFix](https://codeberg.org/Lyall/GBFRelinkFix) (which provides `winmm.dll` and distant LOD / shadow tweaks), or [Ultimate ASI Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader/releases) renamed to `winmm.dll`.
+2. Download `RelinkDeckTuner-v0.15-asi.zip` from [GitHub Releases](https://github.com/Asaad-E/RelinkDeckTuner/releases).
+3. Extract `scripts/RelinkDeckTuner.asi` and `scripts/RelinkDeckTuner.ini` into your game's `scripts/` folder:
+   ```text
+   Granblue Fantasy Relink/
+   ├─ granblue_fantasy_relink.exe
+   ├─ winmm.dll                  (from GBFRelinkFix or Ultimate ASI Loader)
+   └─ scripts/
+      ├─ RelinkDeckTuner.asi
+      └─ RelinkDeckTuner.ini
+   ```
+4. **SteamOS / Linux (Proton) only:** Set the game's Steam Launch Options so Proton loads `winmm.dll`:
+   ```text
+   WINEDLLOVERRIDES="winmm=n,b" %command%
+   ```
+   *(On Windows PC, just launch the game normally.)*
+
+With just the `.asi` + `.ini`, dialogue-only 3D resolution scaling (`Scale = 0.8`), sharp HUD (`Fields = 1`), FSR 1.0 upscaling, post-DoF resize fix, `DialogueLodBias`, and `F9` / `F10` hotkeys all work immediately without Python or modifying `data.i`. Check `scripts/RelinkDeckTuner.log` after starting a dialogue to confirm it is active.
+
+---
+
+### Optional: Full Data Mods (Foliage LOD1, Town Optimizations & In-Game Menu)
+
+Because game files (`data.i` / `data.N`) are copyrighted and cannot be distributed directly, the optional static data mods (vegetation LOD1 on 606 models, cutscene shadow removal, town fog/simple shadows/NPC density, and the 5 extra rows in **Options > Graphics**) can be generated locally from your own game folder using Python 3.10+ (works on **v2.0.5 and >= 2.0.5**):
+
+```bash
+# Direct install into the game folder (backs up data.i to data.i.orig)
+python -I tools/patch_any_version.py "C:\Path\To\Granblue Fantasy Relink" --mode direct
+
+# Or export a Reloaded-II mod folder
+python -I tools/patch_any_version.py "C:\Path\To\Granblue Fantasy Relink" --mode reloaded --out "C:\Path\To\Reloaded-II\Mods\RelinkDeckTuner"
+```
+
+### Building a Standalone v2.0.5 Release Package (Developers / Maintainers)
+
+1. Place a clean v2.0.5 `data.i` in `backup/data.i` and base ASI loader files (`winmm.dll`, `scripts/GBFRelinkFix.*`) in `deck_pkg/`.
+2. Run:
    ```bash
    bash tools/make_deck_pkg.sh
    bash tools/make_release.sh v0.15
    ```
-3. Run `install.sh` (Steam Deck / Linux) or `install.bat` (Windows) inside `release/RelinkDeckTuner-v0.15/`:
-   ```bash
-   bash install.sh "/path/to/Granblue Fantasy Relink"
-   ```
-4. On SteamOS / Linux, set Steam Launch Options for the game:
-   ```text
-   WINEDLLOVERRIDES="winmm=n,b" %command%
-   ```
-
-### Option B: Granblue Fantasy: Relink >= 2.0.5 (e.g. Ver. 2.0.6+)
-1. Build `RelinkDeckTuner.asi` (see [Building from Source](#building-from-source)).
-2. Run the universal patcher against your installed game directory (Python 3.10+ required):
-   ```bash
-   # Direct install into the game folder (backs up data.i to data.i.orig)
-   python -I tools/patch_any_version.py "C:\Path\To\Granblue Fantasy Relink" --mode direct
-
-   # Or export a Reloaded-II mod folder
-   python -I tools/patch_any_version.py "C:\Path\To\Granblue Fantasy Relink" --mode reloaded --out "C:\Path\To\Reloaded-II\Mods\RelinkDeckTuner"
-   ```
-   *(If targeting an ASI-only setup without menu strings, pass `--skip-options`; `.asi` reads settings from `scripts/RelinkDeckTuner.ini`.)*
+3. Distribute or install from `release/RelinkDeckTuner_v0.15/` using `install.sh` (Linux/Deck) or `install.bat` (Windows).
 
 ## Configuration (`scripts/RelinkDeckTuner.ini`)
 
