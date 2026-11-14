@@ -132,9 +132,10 @@ class Index:
 
 
 class Archive:
-    def __init__(self, game_dir):
+    def __init__(self, game_dir, index_path=None):
         self.dir = game_dir
-        self.index = Index(open(os.path.join(game_dir, "data.i"), "rb").read())
+        idx_file = index_path or os.path.join(game_dir, "data.i")
+        self.index = Index(open(idx_file, "rb").read())
         self._chunk_cache = {}
 
     def find(self, path):
@@ -165,6 +166,17 @@ class Archive:
             data = raw if zsize == usize else lz4.block.decompress(raw, uncompressed_size=usize)
             self._chunk_cache = {chunk_idx: data}
         return self._chunk_cache[chunk_idx][dec_off:dec_off + size]
+
+
+def load_candidate_paths(game_dir, arc):
+    """Return game asset paths from dumps/resolved.tsv if present, else filter tools/known_paths.txt against arc."""
+    resolved = os.path.join(game_dir, "src", "dumps", "resolved.tsv")
+    if os.path.isfile(resolved):
+        return [l.split("\t")[0] for l in open(resolved, encoding="utf-8")]
+    known = os.path.join(os.path.dirname(os.path.abspath(__file__)), "known_paths.txt")
+    if not os.path.isfile(known):
+        raise FileNotFoundError(f"neither {resolved} nor {known} found")
+    return [p for l in open(known, encoding="utf-8") if (p := l.strip()) and arc.find(p) is not None]
 
 
 def main():

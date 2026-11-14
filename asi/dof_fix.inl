@@ -12,7 +12,7 @@
 void* AllocNear(uintptr_t target, size_t size);
 bool BytesMatch(uintptr_t rva, const uint8_t* expected, size_t n);
 
-constexpr uintptr_t kDofRenderSize = 0x6b822d8;  // 2 x i32: render width/height read by the DoF setup
+uintptr_t g_rvaDofRenderSize = 0x6b822d8;  // 2 x i32: render width/height read by the DoF setup
 constexpr int kCreateComputeShaderSlot = 18;     // ID3D11Device vtable index
 constexpr int kDispatchSlot = 41;                // ID3D11DeviceContext vtable index
 
@@ -85,20 +85,67 @@ void DxbcChecksum(const uint8_t* data, size_t size, uint32_t out[4]) {
     memcpy(out, st, 16);
 }
 
-// Builds the patched copy of the layered-DoF compute shader. Returns the number of operands
-// replaced (0 = not that shader or unexpected layout) and the UAV slot of g_DofTexture.
-int PatchDofShader(const void* code, SIZE_T len, std::vector<uint8_t>& out, UINT& uavSlot) {
+// Locate RDEF and (optionally) SHEX/SHDR chunks in a DXBC container.
+bool FindDxbcChunks(const void* code, SIZE_T len, size_t& rdef, size_t& shex, size_t& shexSize) {
     const auto* d = static_cast<const uint8_t*>(code);
     auto u32 = [&](size_t o) { uint32_t v; memcpy(&v, d + o, 4); return v; };
-    if (len < 32 || memcmp(d, "DXBC", 4) != 0 || u32(24) != len) return 0;
-    size_t rdef = 0, shex = 0, shexSize = 0;
+    if (!code || len < 32 || memcmp(d, "DXBC", 4) != 0 || u32(24) != len) return false;
+    rdef = 0; shex = 0; shexSize = 0;
     for (uint32_t i = 0, n = u32(28); i < n && 32 + 4 * i + 4 <= len; i++) {
         uint32_t off = u32(32 + 4 * i);
-        if (off + 8 > len) return 0;
+        if (off + 8 > len) return false;
         if (!memcmp(d + off, "RDEF", 4)) rdef = off + 8;
         if (!memcmp(d + off, "SHEX", 4) || !memcmp(d + off, "SHDR", 4)) { shex = off + 8; shexSize = u32(off + 4); }
     }
-    if (!rdef || !shex || shex + shexSize > len) return 0;
+    return rdef != 0 && shex != 0 && shex + shexSize <= len;
+}
+
+// Fallback TUP shader identification by DXBC RDEF reflection (for game versions where shader bytecode/checksum changed).
+bool IsTupShaderByRdef(const void* code, SIZE_T len) {
+    size_t rdef = 0, shex = 0, shexSize = 0;
+    if (!FindDxbcChunks(code, len, rdef, shex, shexSize)) return false;
+    const auto* d = static_cast<const uint8_t*>(code);
+    auto u32 = [&](size_t o) { uint32_t v; memcpy(&v, d + o, 4); return v; };
+    auto str = [&](size_t o) -> const char* {
+        size_t p = rdef + o;
+        if (p >= len || !memchr(d + p, 0, len - p)) return "";
+        return reinterpret_cast<const char*>(d + p);
+    };
+    if (rdef + 32 > len) return false;
+    uint32_t cbCount = u32(rdef), cbOff = u32(rdef + 4), bindCount = u32(rdef + 8), bindOff = u32(rdef + 12);
+    size_t varStride = memcmp(d + rdef + 28, "RD11", 4) == 0 ? 40 : 24;
+    bool hasTex = false;
+    for (uint32_t i = 0; i < bindCount; i++) {
+        size_t b = rdef + bindOff + 32 * i;
+        if (b + 32 > len) return false;
+        if (u32(b + 4) == 2 && u32(b + 20) == 3 && !strcmp(str(u32(b)), "g_CurrentTexture")) hasTex = true;
+    }
+    if (!hasTex) return false;
+    for (uint32_t i = 0; i < cbCount; i++) {
+        size_t c = rdef + cbOff + 24 * i;
+        if (c + 24 > len) return false;
+        if (strcmp(str(u32(c)), "ParamBuffer")) continue;
+        bool hasOrg = false, hasOdd = false, hasStop = false;
+        for (uint32_t k = 0, vc = u32(c + 4); k < vc; k++) {
+            size_t v = rdef + u32(c + 8) + varStride * k;
+            if (v + 8 > len) return false;
+            const char* vn = str(u32(v));
+            if (!strcmp(vn, "orgScreen")) hasOrg = true;
+            else if (!strcmp(vn, "isOddFrame_")) hasOdd = true;
+            else if (!strcmp(vn, "isStopTUP_")) hasStop = true;
+        }
+        if (hasOrg && hasOdd && hasStop) return true;
+    }
+    return false;
+}
+
+// Builds the patched copy of the layered-DoF compute shader. Returns the number of operands
+// replaced (0 = not that shader or unexpected layout) and the UAV slot of g_DofTexture.
+int PatchDofShader(const void* code, SIZE_T len, std::vector<uint8_t>& out, UINT& uavSlot) {
+    size_t rdef = 0, shex = 0, shexSize = 0;
+    if (!FindDxbcChunks(code, len, rdef, shex, shexSize)) return 0;
+    const auto* d = static_cast<const uint8_t*>(code);
+    auto u32 = [&](size_t o) { uint32_t v; memcpy(&v, d + o, 4); return v; };
     auto str = [&](size_t o) { return reinterpret_cast<const char*>(d + rdef + o); };
     uint32_t cbCount = u32(rdef), cbOff = u32(rdef + 4), bindCount = u32(rdef + 8), bindOff = u32(rdef + 12);
     size_t varStride = memcmp(d + rdef + 28, "RD11", 4) == 0 ? 40 : 24;
@@ -267,8 +314,8 @@ bool PrepareDofPass(ID3D11Device* dev, ID3D11DeviceContext* ctx, ID3D11Texture2D
 
 void PostDofUpscale(ID3D11DeviceContext* ctx, UINT slot) {
     if (g_dofPass.failed) return;
-    int rw = *reinterpret_cast<volatile int*>(g_base + kDofRenderSize);
-    int rh = *reinterpret_cast<volatile int*>(g_base + kDofRenderSize + 4);
+    int rw = *reinterpret_cast<volatile int*>(g_base + g_rvaDofRenderSize);
+    int rh = *reinterpret_cast<volatile int*>(g_base + g_rvaDofRenderSize + 4);
     ID3D11UnorderedAccessView* uav = nullptr;
     ctx->CSGetUnorderedAccessViews(slot, 1, &uav);
     if (!uav) return;
@@ -381,18 +428,19 @@ void PostDofUpscale(ID3D11DeviceContext* ctx, UINT slot) {
 // context, x/y groups from the pass, z = 1). That 6-byte call becomes call [rip+X] into DofDispatch,
 // which makes the same call through the context's current function table and then runs the post
 // pass. No D3D11 function tables are modified (the native runtime rewrites its own).
-constexpr uintptr_t kDofDispatchCall = 0x244c336;
+uintptr_t g_rvaDofDispatchCall = 0x244c336;
 const uint8_t kDofDispatchCallBytes[] = {0xff, 0x90, 0x48, 0x01, 0x00, 0x00};  // call qword ptr [rax+148h]
 // The pass runs 4 times per frame (invocationCount_ 0..3, loop at 0x244bfd7), each time writing the
-// whole target; the counter is stored as a float at kDofInvocation (0x244c278) before each dispatch.
-constexpr uintptr_t kDofInvocationStore = 0x244c278, kDofInvocation = 0x6e164f8;
+// whole target; the counter is stored as a float at kDofInvocation before each dispatch.
+constexpr uintptr_t kDofInvocationStore = 0x244c278;
+uintptr_t g_rvaDofInvocation = 0x6e164f8;
 const uint8_t kDofInvocationStoreBytes[] = {0xc5, 0xfa, 0x11, 0x05, 0x78, 0xa2, 0x9c, 0x04};  // vmovss [rip+..], xmm0
 constexpr float kDofLastInvocation = 3.0f;
 
 void STDMETHODCALLTYPE DofDispatch(ID3D11DeviceContext* ctx, UINT x, UINT y, UINT z) {
     using Fn = void(STDMETHODCALLTYPE*)(ID3D11DeviceContext*, UINT, UINT, UINT);
     reinterpret_cast<Fn>((*reinterpret_cast<void***>(ctx))[kDispatchSlot])(ctx, x, y, z);
-    if (g_dofShaders.empty() || *reinterpret_cast<volatile float*>(g_base + kDofInvocation) < kDofLastInvocation) return;
+    if (g_dofShaders.empty() || *reinterpret_cast<volatile float*>(g_base + g_rvaDofInvocation) < kDofLastInvocation) return;
     ID3D11ComputeShader* cs = nullptr;
     ctx->CSGetShader(&cs, nullptr, nullptr);
     if (!cs) return;
@@ -405,10 +453,11 @@ void STDMETHODCALLTYPE DofDispatch(ID3D11DeviceContext* ctx, UINT x, UINT y, UIN
     if (slot >= 0) PostDofUpscale(ctx, static_cast<UINT>(slot));
 }
 
-bool InstallDofDispatchCall() {
-    uintptr_t site = g_base + kDofDispatchCall;
-    if (!BytesMatch(kDofDispatchCall, kDofDispatchCallBytes, sizeof(kDofDispatchCallBytes)) ||
-        !BytesMatch(kDofInvocationStore, kDofInvocationStoreBytes, sizeof(kDofInvocationStoreBytes)))
+bool InstallDofDispatchCall(bool verifyV205) {
+    if (!g_rvaDofDispatchCall || !g_rvaDofInvocation || !g_rvaDofRenderSize) return false;
+    uintptr_t site = g_base + g_rvaDofDispatchCall;
+    if (!BytesMatch(g_rvaDofDispatchCall, kDofDispatchCallBytes, sizeof(kDofDispatchCallBytes))) return false;
+    if (verifyV205 && !BytesMatch(kDofInvocationStore, kDofInvocationStoreBytes, sizeof(kDofInvocationStoreBytes)))
         return false;
     auto* slot = static_cast<void**>(AllocNear(site, 16));
     if (!slot) return false;

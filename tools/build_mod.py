@@ -23,7 +23,7 @@ import msgpack
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import msgpack_span as ms  # noqa: E402
-from gbfr_archive import Archive  # noqa: E402
+from gbfr_archive import Archive, load_candidate_paths  # noqa: E402
 from option_table import hash32  # noqa: E402
 
 VERSION = "0.1.0"
@@ -310,6 +310,8 @@ def build_menu(arc, mod):
 
     for region in TEXT_REGIONS:
         path = f"system/table/text/{region}/text_ui.msg"
+        if arc.find(path) is None:
+            continue
         mod.write(path, append_text_rows(arc.read(path), texts))
         mod.changes.append(f"{path}: added {len(texts)} text rows (English)")
 
@@ -407,21 +409,30 @@ def main():
     ap.add_argument("--npc-density", type=float, default=1.0, help="0.5 = half density (A5, experimental)")
     ap.add_argument("--fog-shadow-mask", type=int, default=511, help="value for the town quality-flag masks (A3)")
     ap.add_argument("--menu-only", action="store_true", help="only build the Deck Tuner menu mod (A6)")
+    ap.add_argument("--skip-options", action="store_true", help="skip building A1 hidden options mod")
+    ap.add_argument("--allow-menu-skip", action="store_true", help="warn and skip menu mod if option table layout changed")
+    ap.add_argument("--index", help="optional path to factory data.i (e.g. data.i.orig)")
     args = ap.parse_args()
 
-    arc = Archive(args.game_dir)
+    arc = Archive(args.game_dir, index_path=args.index)
     menu = ModWriter(args.out_dir, "relinkdecktuner.menu", "Relink Deck Tuner - Menu Options",
                      "Adds the Relink Deck Tuner settings to the Graphics options (needs RelinkDeckTuner.asi 0.13+).")
-    build_menu(arc, menu)
-    menu.finish()
+    try:
+        build_menu(arc, menu)
+        menu.finish()
+    except (SystemExit, KeyError) as e:
+        if not args.allow_menu_skip:
+            raise
+        print(f"[relinkdecktuner.menu] skipped (table layout changed in this game version): {e}")
     if args.menu_only:
         return
-    paths = [l.split("\t")[0] for l in open(os.path.join(args.game_dir, "src/dumps/resolved.tsv"), encoding="utf-8")]
+    paths = load_candidate_paths(args.game_dir, arc)
 
-    opts = ModWriter(args.out_dir, "relinkdecktuner.options", "Relink Deck Tuner - Hidden Graphics Options",
-                     "Shows Shadow Quality, Character/Background Models, Effects, Decals and Depth of Field in the PC graphics menu.")
-    build_options(arc, opts)
-    opts.finish()
+    if not args.skip_options:
+        opts = ModWriter(args.out_dir, "relinkdecktuner.options", "Relink Deck Tuner - Hidden Graphics Options",
+                         "Shows Shadow Quality, Character/Background Models, Effects, Decals and Depth of Field in the PC graphics menu.")
+        build_options(arc, opts)
+        opts.finish()
 
     dlg = ModWriter(args.out_dir, "relinkdecktuner.dialogue", "Relink Deck Tuner - Lighter Dialogue Scenes",
                     "Disables per-frame dynamic shadows of cutscene/dialogue point lights.")

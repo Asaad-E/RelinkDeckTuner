@@ -17,7 +17,7 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from build_mod import ModWriter  # noqa: E402
-from gbfr_archive import Archive  # noqa: E402
+from gbfr_archive import Archive, load_candidate_paths  # noqa: E402
 from minfo import MInfo  # noqa: E402
 
 VEGETATION = re.compile(rb"(leaf|leaves|bush|grass|hedge|ivy|flower|fern|shrub|vine|plant|foliage|crown|needle)",
@@ -31,10 +31,11 @@ def main():
     ap.add_argument("out_dir")
     ap.add_argument("--level", type=int, default=1, help="first LOD allowed (1 = skip LOD0)")
     ap.add_argument("--mod-id", default="relinkdecktuner.foliage")
+    ap.add_argument("--index", help="optional path to factory data.i (e.g. data.i.orig)")
     args = ap.parse_args()
 
-    arc = Archive(args.game_dir)
-    paths = [l.split("\t")[0] for l in open(os.path.join(args.game_dir, "src/dumps/resolved.tsv"), encoding="utf-8")]
+    arc = Archive(args.game_dir, index_path=args.index)
+    paths = load_candidate_paths(args.game_dir, arc)
     mats = {}
     for p in paths:
         m = re.match(r"model/(b[ag]/b[ag][0-9a-f]{4})/vars/\d+\.mmat$", p)

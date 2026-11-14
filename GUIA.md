@@ -27,32 +27,34 @@ El juego lo relee cada segundo, así que se puede cambiar con el juego abierto. 
 | `ExitDelayMs` | `700` | Cuánto espera sin cámara de cinemática antes de dar el diálogo por terminado. |
 | `LogPeriodMs` | `2000` | Cada cuánto escribe en `RelinkDeckTuner.log` una línea de estado, con `fps` y `dialogueFps`. |
 
-## Instalar en la Deck (desde este PC)
+## Construir e instalar
 
-Requisitos: la Deck encendida, en la misma red y con el juego cerrado (SSH ya configurado, ver `COPIAR_A_STEAM_DECK.txt`).
+### Paquete v2.0.5 (Steam Deck / PC)
 
-```
-cd "C:\Test\Granblue Fantasy Relink\src"
+Requiere una copia limpia de `data.i` de la v2.0.5 en `backup/data.i` y los archivos de `deck_pkg/`.
+
+```bash
 bash tools/make_deck_pkg.sh
-bash tools/install_deck.sh
+bash tools/make_release.sh v0.15
 ```
 
-`install_deck.sh` guarda lo que había en `~/Documents/relinkdecktuner_prev_<fecha>/`, copia el paquete y comprueba cada archivo por SHA‑256. Proton necesita que `winmm` sea "native,builtin" en el prefijo del juego; ya está configurado en la Deck (§ instalación de [fase1.md](fase1.md)).
+Esto genera la carpeta `release/RelinkDeckTuner-v0.15/` con `install.sh`, `install.bat`, `uninstall.sh`, `uninstall.bat` y `SHA256SUMS.txt`. Proton necesita `WINEDLLOVERRIDES="winmm=n,b"` en las opciones de lanzamiento de Steam o configurado en `winecfg`.
 
-## Volver al juego de fábrica en la Deck
+### Versiones >= 2.0.5 (p. ej. 2.0.6+)
 
-Con el juego cerrado, por SSH:
+Parchea directamente los archivos `data.i` / `data.N` de la carpeta del juego (o exporta una carpeta lista para Reloaded-II):
 
+```bash
+python -I tools/patch_any_version.py "<ruta_al_juego>" --mode direct
 ```
-cd ~/Documents/nogames/"Granblue Fantasy Relink"
-cp data.i.orig data.i
-rm -rf winmm.dll scripts data/filter data/layout data/model
-```
+
+## Volver al juego de fábrica
+
+Usar `uninstall.sh` / `uninstall.bat` del paquete de release, o manualmente con el juego cerrado restaurar `data.i.orig` sobre `data.i` y borrar `winmm.dll`, `scripts/` y las carpetas modificadas dentro de `data/` (`filter`, `layout`, `model`, `system`).
 
 ## Medir
 
-- **En la Deck:** overlay de rendimiento en nivel 4. Además, `scripts/RelinkDeckTuner.log` registra `fps` (todo el juego) y `dialogueFps` (en diálogo) cada `LogPeriodMs`.
-- **En el PC (sin intervención):** `tools/pcbench/drive.py` carga una partida, llega al diálogo de prueba y mide. `tools/pcbench/matrix.sh` prueba varias configuraciones seguidas. Ver la cabecera de cada script.
+- **En la Deck:** overlay de rendimiento de SteamOS en nivel 4. Además, `scripts/RelinkDeckTuner.log` registra `fps` (todo el juego) y `dialogueFps` (en diálogo) cada `LogPeriodMs`.
 
 ## Resultados de referencia (PC, GPU integrada; en la Deck se ganó en la misma proporción)
 

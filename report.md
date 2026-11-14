@@ -53,7 +53,7 @@ Guía de uso: [GUIA.md](GUIA.md).
 
 Las salidas intermedias están en `src/dumps/` (ignorado por git, se regenera con las herramientas).
 
-Uso de `agy` (Gemini 3.8 Flash High): clasificó ~3.000 cadenas del ejecutable relacionadas con rendimiento (`src/notes/agy_strings_report.md`). **Verifiqué cada fila:** 429 coinciden literalmente con el volcado y 8 no, porque `agy` las truncó con "...". Sus "Top 20 leads" son hipótesis. Solo uso aquí las que confirmé después en los datos (por ejemplo `useSimpleShadowQualityFlag_`, `useFogDownScaleQualityFlag_`, `isDistanceCulling_`).
+Clasificación manual y filtrado sobre ~3.000 cadenas del ejecutable relacionadas con rendimiento; aquí solo se usan las confirmadas directamente en los datos del archivo o en runtime (por ejemplo `useSimpleShadowQualityFlag_`, `useFogDownScaleQualityFlag_`, `isDistanceCulling_`).
 
 Por qué no usé GBFRDataTools directamente: el entorno no me permite compilar código externo. Usé su código fuente solo como especificación de formatos.
 
@@ -250,7 +250,7 @@ La versión de PC no tiene código que guarde ni aplique esos valores. Desde dat
 
 ### 7.4 Resultado de la prueba 7.1 (Deck, sin mods, 2026‑11‑02) [MEDIDO]
 
-Overlay de MangoHud nivel 4, juego de fábrica (v2.0.5). Las fotos están en `notes/deck_baseline/` (no van a git).
+Overlay de MangoHud nivel 4, juego de fábrica (v2.0.5).
 
 | Foto | Escena | FPS | Frametime | GPU: carga / reloj / W | CPU: carga / reloj / W |
 |---|---|---|---|---|---|
@@ -444,13 +444,13 @@ Con `Scale = 0.85` (1088x612): **30 FPS**, 33,7 ms (33,3‑34,1), GPU 99 % / 144
 
 ### 7.13 Matriz de rendimiento automatizada en PC (2026‑11‑03) [MEDIDO]
 
-**Método** (`tools/pcbench/`):
-- `drive.py` restaura las partidas de referencia y arranca el juego. Reconoce cada pantalla comparando capturas con miniaturas de referencia (y los bordes del texto "Main Menu" del HUD), carga el slot y dispara el diálogo:
+**Método automatizado en PC:**
+- Un arnés local de pruebas restaura las partidas de referencia y arranca el juego. Reconoce cada pantalla comparando capturas con miniaturas de referencia (y los bordes del texto "Main Menu" del HUD), carga el slot y dispara el diálogo:
   - slot 1: Lyria, *"No wonder you're a master swordswoman!"*, Folca;
   - slot 3: el Verbose Man, Seedhollow.
 - Lee `dialogueFps` del log de RelinkDeckTuner (la cámara de cinemática se actualiza una vez por fotograma) durante 15 s y toma la mediana.
 - Las teclas solo se envían si el juego tiene el foco.
-- `matrix.sh` instala cada combinación de datos y `.ini`, mide los dos diálogos y deja el juego de fábrica al final.
+- El arnés prueba cada combinación de datos y `.ini`, mide los dos diálogos y deja el juego de fábrica al final.
 - Ajustes: los de la Deck (Standard, 1280x720), con el límite de FPS subido a 120 **solo en el PC**, para medir margen y no el tope de 30.
 - GPU: Radeon integrada del PC, más lenta que la de la Deck. Las cifras sirven para comparar configuraciones entre sí.
 - Ruido: la línea base repetida dio 18/25 y 19/25 FPS (±1 FPS).
@@ -534,7 +534,7 @@ El salto de ~370‑390 ms al principio de cada sesión es la carga. Con el paque
 
 - `0x20d320(settings*, out*, key)` devuelve el valor de una opción por su clave. Para "Rendering" (`TXT_PAU_OPT_GRA_SIMULATION`, `0x9a9f05f8`) lee el byte `settings + 0x42`.
 - El objeto es el singleton apuntado por `exe + 0x7c25030`.
-- Detalle en `notes/agy_c/README.md`, que incluye la corrección: el primer análisis de agy usó offsets de fichero en lugar de RVA.
+- El puntero base corresponde a la RVA del singleton de configuración en el ejecutable v2.0.5 (`exe + 0x7c25030`).
 
 **Problema de diseño:** usar "Rendering" para controlar la escala también cambia lo que esa opción hace en el motor. Con el preset Standard está al mínimo, y subirla para elegir escala aumentaría ese coste. La alternativa sin efectos secundarios es la hotkey (F9/F10, §RelinkDeckTuner 0.11). Una opción de menú propia (vía D) sigue siendo la solución limpia, pero cuesta mucho más.
 

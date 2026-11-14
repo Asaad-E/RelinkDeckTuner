@@ -1,5 +1,5 @@
 // RelinkDeckTuner.asi - lower the render resolution only while a dialogue/cutscene camera is active.
-// Granblue Fantasy: Relink v2.0.5 only: every address is checked against the expected bytes first.
+// Supports Granblue Fantasy: Relink v2.0.5 (direct RVA fast-path) and >2.0.5 (AOB pattern scan).
 //
 // Dialogue detection: a counter is bumped by a small hook in the cutscene camera update
 // (0x942698, next to GBFRelinkFix's "Cutscene FOV" hook at 0x9426a4). Hits in the last
@@ -32,45 +32,44 @@
 
 namespace {
 
-constexpr uintptr_t kPresetTable = 0x6b82460;  // 6 rows x 0x4C
-constexpr uintptr_t kPresetIndex = 0x7034940;  // u32, 5 = Custom
-constexpr uintptr_t kRenderSize = 0x6b822e0;   // 4 x i32 written from row +0x24..+0x30
-constexpr uintptr_t kSizeCopy = 0x6bbaa0;      // function that copies them
-constexpr uintptr_t kCamHook = 0x942698;       // mov rax,[rsi+60h]; vmovss xmm2,[rax+9D4h]
-constexpr uintptr_t kCamResume = 0x9426a4;
+uintptr_t g_rvaPresetTable = 0x6b82460;   // 6 rows x 0x4C
+uintptr_t g_rvaPresetIndex = 0x7034940;   // u32, 5 = Custom
+uintptr_t g_rvaRenderSize = 0x6b822e0;    // 4 x i32 written from row +0x24..+0x30
+uintptr_t g_rvaSizeCopy = 0x6bbaa0;       // function that copies them
+uintptr_t g_rvaCamHook = 0x942698;        // mov rax,[rsi+60h]; vmovss xmm2,[rax+9D4h]
 constexpr int kRowSize = 0x4c;
-// Scene-graph LOD selection (0x23a4bac: vmulss xmm3, [table + flag*4]) scales each model's screen size
+// Scene-graph LOD selection (vmulss xmm3, [table + flag*4]) scales each model's screen size
 // by this 2-float table before comparing it with the model's lod_screen_size_thresholds. Entry 1
 // (1.0) is the normal factor; lowering it makes scenery pick lighter LODs. Only read there.
-constexpr uintptr_t kLodFactorTable = 0x54abf98;
+uintptr_t g_rvaLodFactorTable = 0x54abf98;
 const float kLodFactorDefault[2] = {0.25f, 1.0f};
 // Hook on that multiply (lea rax,[table]; vmulss xmm3,[rax+r10*4]). There rsi points at the model's
 // LOD record, whose first floats are its lod_screen_size_thresholds. The vegetation data mod raises
 // threshold 0..1 of vegetation models to 1000 (factory models are all below 100), so
 // "threshold[1] >= 100" tells vegetation apart and its screen size gets an extra factor.
-constexpr uintptr_t kVegLodHook = 0x23a4ba5;
+uintptr_t g_rvaVegLodHook = 0x23a4ba5;
 const uint8_t kVegLodHookBytes[] = {0x48, 0x8d, 0x05, 0xec, 0x73, 0x10, 0x03,   // lea rax, [rip+...]
                                     0xc4, 0xa1, 0x62, 0x59, 0x1c, 0x90};        // vmulss xmm3,xmm3,[rax+r10*4]
 
 // Option getter (settings, out variant*, key) and setter (settings, const variant*, key). For keys
 // they do not know, the getter returns 0 and the setter drops the value, so both are safe to answer
 // ourselves. Variant: int at +0, alternative index byte at +0x20 (0 = int).
-constexpr uintptr_t kOptionGetter = 0x20d320;
-constexpr uintptr_t kOptionSetter = 0x2096b0;
+uintptr_t g_rvaOptionGetter = 0x20d320;
+uintptr_t g_rvaOptionSetter = 0x2096b0;
 const uint8_t kOptionGetterBytes[] = {0x55, 0x56, 0x57, 0x53, 0x48, 0x83, 0xec, 0x58};  // push rbp/rsi/rdi/rbx; sub rsp,58h
 const uint8_t kOptionSetterBytes[] = {0x55, 0x56, 0x57, 0x53, 0x48, 0x83, 0xec, 0x38};  // push rbp/rsi/rdi/rbx; sub rsp,38h
 
-// TAA in reduced mode: when the 3D size differs from the output size, the TAA pass (0x21623c0)
+// TAA in reduced mode: when the 3D size differs from the output size, the TAA pass
 // switches to a variant shader that leaves the image for the temporal upsampler to interleave with
 // the previous frame. Our upsampler replacement only resamples, so that variant shows up as
 // shimmer, stepped hair and lost outlines. Bit 0 of byte +0x15 of the render-flags block pointed to
-// by kRenderFlagsPtr makes the pass keep the normal TAA shader; the game reads that bit only there
-// (shader choice at 0x21623d1, constant layout at 0x2162436).
-constexpr uintptr_t kRenderFlagsPtr = 0x7031250;
-constexpr uintptr_t kTaaVariantTest = 0x21623ca;
+// by g_rvaRenderFlagsPtr makes the pass keep the normal TAA shader; the game reads that bit only there.
+uintptr_t g_rvaRenderFlagsPtr = 0x7031250;
+uintptr_t g_rvaTaaVariantTest = 0x21623ca;
 const uint8_t kTaaVariantTestBytes[] = {0x48, 0x8b, 0x05, 0x7f, 0xee, 0xec, 0x04,   // mov rax, [rip+...] (flags)
                                         0xf6, 0x40, 0x15, 0x01};                     // test byte [rax+15h], 1
 bool g_normalTaa;  // code matched: keep the normal TAA shader while scaled
+bool g_isV205 = true;
 
 
 
@@ -140,7 +139,13 @@ std::vector<uint8_t> g_testShader;  // UpscalerShaderFile (.cso) for testing rep
 
 HRESULT STDMETHODCALLTYPE HookedCreatePixelShader(void* device, const void* code, SIZE_T len, void* linkage,
                                                   void** out) {
-    if (code && len > 20 && memcmp(static_cast<const uint8_t*>(code) + 4, kTupShaderHash, 16) == 0) {
+    bool isTup = code && len > 20 && memcmp(static_cast<const uint8_t*>(code) + 4, kTupShaderHash, 16) == 0;
+    bool viaRdef = false;
+    if (!isTup && !g_isV205 && code && len > 32) {
+        isTup = IsTupShaderByRdef(code, len);
+        viaRdef = isTup;
+    }
+    if (isTup) {
         const void* repl = UpscalePS();
         SIZE_T replLen = UpscalePSSize();
         const char* name = UpscaleName();
@@ -150,7 +155,8 @@ HRESULT STDMETHODCALLTYPE HookedCreatePixelShader(void* device, const void* code
             name = "UpscalerShaderFile";
         }
         HRESULT hr = g_realCreatePixelShader(device, repl, replLen, linkage, out);
-        Log("temporal upsampler shader replaced by %s: hr=0x%08lx", name, static_cast<unsigned long>(hr));
+        Log("temporal upsampler shader%s replaced by %s: hr=0x%08lx",
+            viaRdef ? " (matched by RDEF)" : "", name, static_cast<unsigned long>(hr));
         if (SUCCEEDED(hr)) return hr;
         Log("replacement rejected, keeping the original shader");
     }
@@ -207,7 +213,161 @@ bool HookImport(const char* dll, const char* func, void* hook, void** original) 
 }
 
 bool BytesMatch(uintptr_t rva, const uint8_t* expected, size_t n) {
-    return memcmp(reinterpret_cast<void*>(g_base + rva), expected, n) == 0;
+    return rva != 0 && memcmp(reinterpret_cast<void*>(g_base + rva), expected, n) == 0;
+}
+
+uintptr_t ResolveRip32(uintptr_t dispRva, uintptr_t nextInstrRva) {
+    int32_t disp = 0;
+    memcpy(&disp, reinterpret_cast<const void*>(g_base + dispRva), sizeof(disp));
+    return static_cast<uintptr_t>(static_cast<intptr_t>(nextInstrRva) + disp);
+}
+
+bool GetTextSection(uintptr_t& textRva, size_t& textSize) {
+    const auto* base = reinterpret_cast<const uint8_t*>(g_base);
+    const auto* dos = reinterpret_cast<const IMAGE_DOS_HEADER*>(base);
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) return false;
+    const auto* nt = reinterpret_cast<const IMAGE_NT_HEADERS*>(base + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) return false;
+    const IMAGE_SECTION_HEADER* sec = IMAGE_FIRST_SECTION(nt);
+    for (WORD i = 0; i < nt->FileHeader.NumberOfSections; i++, sec++) {
+        if (memcmp(sec->Name, ".text", 5) == 0) {
+            textRva = sec->VirtualAddress;
+            textSize = sec->Misc.VirtualSize ? sec->Misc.VirtualSize : sec->SizeOfRawData;
+            return true;
+        }
+    }
+    return false;
+}
+
+uintptr_t FindUniquePattern(uintptr_t textRva, size_t textSize, const char* pat, const char* label) {
+    std::vector<uint8_t> bytes, mask;
+    for (const char* p = pat; *p;) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        if (p[0] == '?' && p[1] == '?') {
+            bytes.push_back(0); mask.push_back(0);
+            p += 2;
+        } else {
+            char buf[3] = {p[0], p[1], 0};
+            bytes.push_back(static_cast<uint8_t>(strtoul(buf, nullptr, 16)));
+            mask.push_back(1);
+            p += 2;
+        }
+    }
+    const size_t n = bytes.size();
+    if (n == 0 || textSize < n) return 0;
+    const auto* mem = reinterpret_cast<const uint8_t*>(g_base + textRva);
+    const uint8_t firstByte = bytes[0];
+    uintptr_t found = 0;
+    for (size_t i = 0; i <= textSize - n; i++) {
+        if (mask[0] && mem[i] != firstByte) continue;
+        bool ok = true;
+        for (size_t j = 1; j < n; j++) {
+            if (mask[j] && mem[i + j] != bytes[j]) { ok = false; break; }
+        }
+        if (ok) {
+            if (found) {
+                Log("pattern %s matched multiple times (+%zx, +%zx); skipping", label, found, textRva + i);
+                return 0;
+            }
+            found = textRva + i;
+        }
+    }
+    return found;
+}
+
+bool ResolveAddresses() {
+    if (BytesMatch(g_rvaSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes)) &&
+        BytesMatch(g_rvaCamHook, kCamHookBytes, sizeof(kCamHookBytes))) {
+        g_isV205 = true;
+        return true;
+    }
+    g_isV205 = false;
+    uintptr_t textRva = 0;
+    size_t textSize = 0;
+    if (!GetTextSection(textRva, textSize)) {
+        Log("could not locate .text section");
+        return false;
+    }
+    Log("v2.0.5 offsets did not match; scanning .text (+%zx, %zu bytes) for patterns", textRva, textSize);
+
+    // Zero optional RVAs so failed scans degrade cleanly instead of pointing at stale v2.0.5 addresses.
+    g_rvaSizeCopy = g_rvaPresetIndex = g_rvaPresetTable = g_rvaRenderSize = 0;
+    g_rvaCamHook = g_rvaVegLodHook = g_rvaLodFactorTable = 0;
+    g_rvaOptionGetter = g_rvaOptionSetter = 0;
+    g_rvaTaaVariantTest = g_rvaRenderFlagsPtr = 0;
+    g_rvaDofRenderSize = g_rvaDofInvocation = g_rvaDofDispatchCall = 0;
+
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "41 57 41 56 41 55 41 54 56 57 55 53 48 83 ec 38 8b 05 ?? ?? ?? ?? 48 83 f8 06 0f 83 ?? ?? ?? ?? 48 6b c0 4c 4c 8d 2d ?? ?? ?? ?? 42 8b 4c 28 24 42 8b 54 28 28 46 8b 44 28 2c 42 8b 44 28 30 87 0d",
+            "SizeCopy")) {
+        g_rvaSizeCopy = m;
+        g_rvaPresetIndex = ResolveRip32(m + 18, m + 22);
+        g_rvaPresetTable = ResolveRip32(m + 39, m + 43);
+        g_rvaRenderSize = ResolveRip32(m + 65, m + 69);
+        Log("pattern SizeCopy +%zx -> PresetIndex +%zx PresetTable +%zx RenderSize +%zx",
+            g_rvaSizeCopy, g_rvaPresetIndex, g_rvaPresetTable, g_rvaRenderSize);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "c5 fa 11 96 ?? ?? 00 00 48 8b 46 60 c5 fa 10 90 ?? ?? 00 00 c5 fa 11 96 ?? ?? 00 00 c5 f8 28 35",
+            "CamHook")) {
+        g_rvaCamHook = m + 8;
+        Log("pattern CamHook +%zx", g_rvaCamHook);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "48 8d 34 f5 00 00 00 00 4c 01 ee 41 88 fa 48 8d 05 ?? ?? ?? ?? c4 a1 62 59 1c 90 4f 0f be 54 27 10",
+            "VegLodHook")) {
+        g_rvaVegLodHook = m + 14;
+        g_rvaLodFactorTable = ResolveRip32(m + 17, m + 21);
+        Log("pattern VegLodHook +%zx -> LodFactorTable +%zx", g_rvaVegLodHook, g_rvaLodFactorTable);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "55 56 57 53 48 83 ec 58 48 8d 6c 24 50 48 c7 45 00 fe ff ff ff 48 89 d3 48 89 ce c7 02 00 00 00 00 c6 42 20 00 41 81 f8",
+            "OptionGetter")) {
+        g_rvaOptionGetter = m;
+        Log("pattern OptionGetter +%zx", g_rvaOptionGetter);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "55 56 57 53 48 83 ec 38 48 8d 6c 24 30 48 c7 45 00 fe ff ff ff 48 89 cb 41 81 f8",
+            "OptionSetter")) {
+        g_rvaOptionSetter = m;
+        Log("pattern OptionSetter +%zx", g_rvaOptionSetter);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "41 80 be ?? ?? 00 00 00 74 ?? 48 8b 05 ?? ?? ?? ?? f6 40 15 01 75 ?? 48 8b 0d ?? ?? ?? ?? 45 8b 86",
+            "TaaVariantTest")) {
+        g_rvaTaaVariantTest = m + 10;
+        g_rvaRenderFlagsPtr = ResolveRip32(m + 13, m + 17);
+        Log("pattern TaaVariantTest +%zx -> RenderFlagsPtr +%zx", g_rvaTaaVariantTest, g_rvaRenderFlagsPtr);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "f6 05 ?? ?? ?? ?? 01 0f 85 ?? ?? ?? ?? 8b 05 ?? ?? ?? ?? 48 8b 0d ?? ?? ?? ?? ff c8 f6 41 65 01 b9 ff 03 00 00 0f 45 c1 89 46 18",
+            "DofRenderSize")) {
+        g_rvaDofRenderSize = ResolveRip32(m + 15, m + 19);
+        Log("pattern DofRenderSize +%zx", g_rvaDofRenderSize);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "c4 e1 f2 2a c0 c5 fa 11 05 ?? ?? ?? ?? 48 8d 05 ?? ?? ?? ?? 48 89 45 30 48 c7 45 38 80 00 00 00",
+            "DofInvocationStore")) {
+        g_rvaDofInvocation = ResolveRip32(m + 9, m + 13);
+        Log("pattern DofInvocation +%zx", g_rvaDofInvocation);
+    }
+    if (uintptr_t m = FindUniquePattern(
+            textRva, textSize,
+            "40 48 8b 4e 10 48 8b 01 41 b9 01 00 00 00 ff 90 48 01 00 00 c7 45 30 ff ff ff ff",
+            "DofDispatchCall")) {
+        g_rvaDofDispatchCall = m + 14;
+        Log("pattern DofDispatchCall +%zx", g_rvaDofDispatchCall);
+    }
+    return g_rvaSizeCopy != 0 && g_rvaCamHook != 0;
 }
 
 
@@ -323,7 +483,7 @@ struct VegLod { volatile float factor; volatile LONG64 hits; };
 VegLod* g_veg;
 
 VegLod* InstallVegLodHook() {
-    uintptr_t site = g_base + kVegLodHook;
+    uintptr_t site = g_base + g_rvaVegLodHook;
     size_t len = sizeof(kVegLodHookBytes);
     auto* tramp = static_cast<uint8_t*>(AllocNear(site, 0x1000));
     if (!tramp) return nullptr;
@@ -337,7 +497,7 @@ VegLod* InstallVegLodHook() {
         int32_t d = static_cast<int32_t>(reinterpret_cast<const volatile uint8_t*>(target) - (p + 4));
         memcpy(p, &d, 4); p += 4;
     };
-    uintptr_t table = g_base + kLodFactorTable;
+    uintptr_t table = g_base + g_rvaLodFactorTable;
     bytes({0x48, 0xb8}); memcpy(p, &table, 8); p += 8;     // mov rax, table   (was lea rax, [rip+...])
     bytes({0xc4, 0xa1, 0x62, 0x59, 0x1c, 0x90});           // vmulss xmm3, xmm3, [rax+r10*4]
     bytes({0x81, 0x7e, 0x04, 0x00, 0x00, 0xc8, 0x42});     // cmp dword [rsi+4], 100.0f (positive floats order as ints)
@@ -532,7 +692,7 @@ void StoreSizes(int32_t* dst, const int32_t* src) {
 }
 
 int32_t* Row(uint32_t index) {
-    return reinterpret_cast<int32_t*>(g_base + kPresetTable + index * kRowSize);
+    return reinterpret_cast<int32_t*>(g_base + g_rvaPresetTable + index * kRowSize);
 }
 
 // Hotkeys: each press moves a scale to the next step and saves it to the .ini (which the loop then
@@ -616,9 +776,9 @@ DWORD WINAPI Worker(LPVOID) {
         }
 
         SaveMenuChoices();
-        if (g_normalTaa) {
+        if (g_normalTaa && g_rvaRenderFlagsPtr) {
             // The flags block is allocated by the game after start; set the bit once it exists.
-            auto* flags = *reinterpret_cast<uint8_t* volatile*>(g_base + kRenderFlagsPtr);
+            auto* flags = *reinterpret_cast<uint8_t* volatile*>(g_base + g_rvaRenderFlagsPtr);
             if (flags && !(flags[0x15] & 1)) {
                 flags[0x15] |= 1;
                 Log("normal TAA kept in reduced mode (render flags %p +0x15)", static_cast<void*>(flags));
@@ -644,7 +804,7 @@ DWORD WINAPI Worker(LPVOID) {
             Log("dialogue camera %s (hits total %lld)", inDialogue ? "ON" : "OFF", hits);
         }
 
-        uint32_t index = *reinterpret_cast<uint32_t*>(g_base + kPresetIndex);
+        uint32_t index = *reinterpret_cast<uint32_t*>(g_base + g_rvaPresetIndex);
         if (index >= 6) continue;
         int32_t* row = Row(index);
         // Mode 1: Scale in dialogues, BaseScale elsewhere. Mode 2: Scale always. Mode 0: native.
@@ -693,7 +853,7 @@ DWORD WINAPI Worker(LPVOID) {
                 lastSlow = g_fs->slow;
             }
             lastLog = now;
-            auto* g = reinterpret_cast<int32_t*>(g_base + kRenderSize);
+            auto* g = reinterpret_cast<int32_t*>(g_base + g_rvaRenderSize);
             Log("state: preset=%u row=%d,%d,%d,%d globals=%d,%d,%d,%d fps=%.1f maxFrameMs=%.1f slow40=%lld dialogueFps=%.1f dialogue=%d applied=%d vegLods=%lld menuReads=%ld menuIgnored=%ld dofPasses=%ld",
                 index, row[9], row[10], row[11], row[12], g[0], g[1], g[2], g[3], fps, maxMs, slow, dlgFps,
                 inDialogue, applied, g_veg ? g_veg->hits : 0LL, g_menuGets, g_menuIgnored, g_dofPasses);
@@ -710,56 +870,61 @@ void Init(HMODULE self) {
     snprintf(g_logPath, sizeof(g_logPath), "%s.log", path);
     g_log = fopen(g_logPath, "a");
     g_base = reinterpret_cast<uintptr_t>(GetModuleHandleA(nullptr));
-    Log("RelinkDeckTuner 0.15 (GBFR v2.0.5), base %p", reinterpret_cast<void*>(g_base));
+    Log("RelinkDeckTuner 0.15, base %p", reinterpret_cast<void*>(g_base));
 
-    if (!BytesMatch(kSizeCopy, kSizeCopyBytes, sizeof(kSizeCopyBytes))) {
-        Log("render-size function not found at expected address: wrong game version, disabled");
+    if (!ResolveAddresses()) {
+        Log("required functions not found (game version unsupported), disabled");
         return;
     }
-    if (!BytesMatch(kCamHook, kCamHookBytes, sizeof(kCamHookBytes))) {
-        Log("camera hook site differs (game version or another mod patched it): disabled");
-        return;
-    }
-    g_camHits = InstallCounterHook(g_base + kCamHook, kCamHookBytes, sizeof(kCamHookBytes));
+    Log(g_isV205 ? "GBFR v2.0.5 verified (fast-path)" : "GBFR >2.0.5 mode (AOB patterns resolved)");
+    g_camHits = InstallCounterHook(g_base + g_rvaCamHook, reinterpret_cast<const uint8_t*>(g_base + g_rvaCamHook),
+                                   sizeof(kCamHookBytes));
     if (!g_camHits) {
         Log("could not allocate trampoline: disabled");
         return;
     }
-    Log("camera hook installed at +%zx", kCamHook);
-    g_fs = InstallFrameStatsHook(g_base + kSizeCopy, kSizeCopyBytes, 6);  // push r15/r14/r13
+    Log("camera hook installed at +%zx", g_rvaCamHook);
+    g_fs = InstallFrameStatsHook(g_base + g_rvaSizeCopy, reinterpret_cast<const uint8_t*>(g_base + g_rvaSizeCopy), 6);  // push r15/r14/r13
     if (g_fs) g_frames = &g_fs->frames;
-    if (BytesMatch(kLodFactorTable, reinterpret_cast<const uint8_t*>(kLodFactorDefault), sizeof(kLodFactorDefault))) {
+    if (g_rvaLodFactorTable &&
+        BytesMatch(g_rvaLodFactorTable, reinterpret_cast<const uint8_t*>(kLodFactorDefault), sizeof(kLodFactorDefault))) {
         DWORD old;
-        auto* t = reinterpret_cast<float*>(g_base + kLodFactorTable);
+        auto* t = reinterpret_cast<float*>(g_base + g_rvaLodFactorTable);
         if (VirtualProtect(t, sizeof(kLodFactorDefault), PAGE_READWRITE, &old)) g_lodFactor = t + 1;
     }
     Log(g_lodFactor ? "scenery LOD factor table found" : "scenery LOD factor table not found: DialogueLodBias off");
-    if (g_lodFactor && BytesMatch(kVegLodHook, kVegLodHookBytes, sizeof(kVegLodHookBytes))) g_veg = InstallVegLodHook();
+    if (g_lodFactor && g_rvaVegLodHook &&
+        (!g_isV205 || BytesMatch(g_rvaVegLodHook, kVegLodHookBytes, sizeof(kVegLodHookBytes)))) {
+        g_veg = InstallVegLodHook();
+    }
     Log(g_veg ? "vegetation LOD hook installed at +%zx" : "vegetation LOD hook not installed (+%zx): DialogueVegetationLod off",
-        kVegLodHook);
-    Log(g_frames ? "frame counter installed at +%zx" : "frame counter not installed (+%zx)", kSizeCopy);
-    g_normalTaa = BytesMatch(kTaaVariantTest, kTaaVariantTestBytes, sizeof(kTaaVariantTestBytes)) &&
+        g_rvaVegLodHook);
+    Log(g_frames ? "frame counter installed at +%zx" : "frame counter not installed (+%zx)", g_rvaSizeCopy);
+    g_normalTaa = g_rvaTaaVariantTest && g_rvaRenderFlagsPtr &&
+                  (!g_isV205 || BytesMatch(g_rvaTaaVariantTest, kTaaVariantTestBytes, sizeof(kTaaVariantTestBytes))) &&
                   GetPrivateProfileIntA("RelinkDeckTuner", "NormalTaa", 1, g_iniPath) != 0;
     Log(g_normalTaa ? "TAA variant check found at +%zx: normal TAA while scaled"
-                    : "TAA variant check not used (+%zx): reduced-mode TAA left as is", kTaaVariantTest);
+                    : "TAA variant check not used (+%zx): reduced-mode TAA left as is", g_rvaTaaVariantTest);
     {
         // Before the worker starts: the getter may run as soon as the hook is in.
         Config c;
         ReadConfig(c);
         UpdateMenuIndex(c);
     }
-    bool getter = InstallEntryHook(kOptionGetter, kOptionGetterBytes, sizeof(kOptionGetterBytes), OnOptionGet);
-    bool setter = getter && InstallEntryHook(kOptionSetter, kOptionSetterBytes, sizeof(kOptionSetterBytes), OnOptionSet);
+    bool getter = g_rvaOptionGetter &&
+                  InstallEntryHook(g_rvaOptionGetter, kOptionGetterBytes, sizeof(kOptionGetterBytes), OnOptionGet);
+    bool setter = getter && g_rvaOptionSetter &&
+                  InstallEntryHook(g_rvaOptionSetter, kOptionSetterBytes, sizeof(kOptionSetterBytes), OnOptionSet);
     Log(getter && setter ? "menu hooks installed (option getter +%zx, setter +%zx)"
                          : "menu hooks not installed (getter +%zx, setter +%zx): menu options inactive",
-        kOptionGetter, kOptionSetter);
+        g_rvaOptionGetter, g_rvaOptionSetter);
     g_upscaler = GetPrivateProfileIntA("RelinkDeckTuner", "Upscaler", 1, g_iniPath);
     g_dofFix = GetPrivateProfileIntA("RelinkDeckTuner", "DofFix", 1, g_iniPath) != 0;
-    if (g_dofFix && !InstallDofDispatchCall()) {
+    if (g_dofFix && !InstallDofDispatchCall(g_isV205)) {
         g_dofFix = false;
-        Log("DoF dispatch call not found (+%zx): DoF upscale fix off", kDofDispatchCall);
+        Log("DoF dispatch call not found (+%zx): DoF upscale fix off", g_rvaDofDispatchCall);
     } else if (g_dofFix) {
-        Log("DoF dispatch call redirected at +%zx", kDofDispatchCall);
+        Log("DoF dispatch call redirected at +%zx", g_rvaDofDispatchCall);
     }
     {
         char shaderPath[MAX_PATH] = "";
